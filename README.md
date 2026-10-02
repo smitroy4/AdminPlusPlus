@@ -1,4 +1,4 @@
-# TaskPortal
+# Admin++
 
 A production-ready MVP **task portal**: authentication, task CRUD, assignment,
 comment threading and role-based access control.
@@ -352,7 +352,7 @@ answers `400` for an illegal jump such as `OPEN → COMPLETED`. Move through
 * One stylesheet (`/css/style.css`) with CSS custom properties for the palette.
 * **Light is the default**; the moon/sun button in the header (or the login
   card) flips to dark mode. The choice is stored in `localStorage`
-  (`taskportal-theme`) and applied before first paint by a tiny inline script,
+  (`admin++-theme`) and applied before first paint by a tiny inline script,
   so there is no flash of the wrong theme.
 * Dark header, light content, alternating table rows, colour-coded status and
   priority badges, alternating left/right message bubbles.
