@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1200">
+    <title>Task | Admin++</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/css/style.css">
+    <script>try{if(localStorage.getItem('admin++-theme')==='dark')document.documentElement.dataset.theme='dark';}catch(e){}</script>
+</head>
+<body>
+
+<header class="app-header">
+    <div class="app-header__inner">
+        <a class="brand" href="/dashboard.html">
+            <span class="brand__mark">A++</span>
+            <span>Admin++</span>
+        </a>
+
+        <nav class="nav" aria-label="Main navigation">
+            <a class="nav__link" href="/dashboard.html">Dashboard</a>
+            <a class="nav__link" href="/my-tasks.html">My Tasks</a>
+            <a class="nav__link" href="/all-tasks.html">All Tasks</a>
+            <a class="nav__link" href="/profile.html">Profile</a>
+            <a class="nav__link is-hidden" data-role="ADMIN" href="/users.html">Users</a>
+            <a class="nav__link is-hidden" data-role="MANAGER" href="/clients.html">Clients</a>
+        </nav>
+
+        <div class="app-header__right">
+            <div class="user-chip">
+                <span class="user-chip__name" data-auth-username>…</span>
+                <span class="user-chip__role" data-auth-role></span>
+                <span class="avatar" data-auth-avatar>?</span>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" data-logout>Log out</button>
+        </div>
+    </div>
+</header>
+
+<main class="main">
+    <div id="detail-error" class="alert" role="alert" aria-live="polite"></div>
+
+    <div id="detail-content">
+        <p class="muted" style="margin-bottom:16px">
+            <a href="/dashboard.html">&larr; Back to dashboard</a>
+        </p>
+
+        <!-- ------------------------------------------------------ task head -->
+        <div class="detail-head">
+            <div class="detail-head__meta">
+                <div class="mono muted" id="detail-taskno">…</div>
+                <h1 id="detail-title">Loading…</h1>
+                <div class="detail-head__badges">
+                    <span id="detail-status-badge"></span>
+                    <span id="detail-priority-badge"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ------------------------------------------------------ meta grid -->
+        <div class="card" style="margin-bottom:20px">
+            <div class="card__body">
+                <div class="detail-grid">
+                    <div class="meta">
+                        <div class="meta__label">Assigned to</div>
+                        <div class="meta__value" id="detail-assignee">—</div>
+                    </div>
+                    <div class="meta">
+                        <div class="meta__label">Client</div>
+                        <div class="meta__value" id="detail-client">—</div>
+                    </div>
+                    <div class="meta">
+                        <div class="meta__label">Created by</div>
+                        <div class="meta__value" id="detail-creator">—</div>
+                    </div>
+                    <div class="meta">
+                        <div class="meta__label">Created</div>
+                        <div class="meta__value" id="detail-created">—</div>
+                    </div>
+                    <div class="meta">
+                        <div class="meta__label">Updated</div>
+                        <div class="meta__value">
+                            <span id="detail-updated">—</span>
+                            <div class="hint" id="detail-updated-meta"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="btn-group" style="padding-top:6px;border-top:1px solid var(--border)">
+                    <!-- status -->
+                    <div class="btn-group" id="status-controls">
+                        <select class="select" id="status-select" style="width:auto;min-width:150px"
+                                aria-label="Task status"></select>
+                        <button type="button" class="btn" id="status-apply">Update status</button>
+                    </div>
+
+                    <!-- claim -->
+                    <div id="assign-to-me-wrap" class="btn-group is-hidden">
+                        <button type="button" class="btn btn--success" id="assign-to-me">Assign to me</button>
+                    </div>
+
+                    <!-- manager assignment -->
+                    <div id="assign-manager-wrap" class="btn-group is-hidden">
+                        <select class="select" id="assign-select" style="width:auto;min-width:180px"
+                                aria-label="Assign to user"></select>
+                        <button type="button" class="btn btn--secondary" id="assign-apply">Assign</button>
+                        <button type="button" class="btn btn--secondary" id="unassign-btn">Unassign</button>
+                    </div>
+                </div>
+
+                <div id="status-alert" class="alert" style="margin-top:14px;margin-bottom:0" role="alert"></div>
+                <div id="assign-alert" class="alert" style="margin-top:14px;margin-bottom:0" role="alert"></div>
+            </div>
+        </div>
+
+        <!-- ------------------------------------- client details (manager/admin) -->
+        <div class="card is-hidden" id="client-details-card" style="margin-bottom:20px">
+            <div class="card__head"><h2>Client details</h2></div>
+            <div class="card__body">
+                <div class="detail-grid">
+                    <div class="meta">
+                        <div class="meta__label">Contact</div>
+                        <div class="meta__value" id="client-contact">—</div>
+                    </div>
+                    <div class="meta">
+                        <div class="meta__label">Email</div>
+                        <div class="meta__value" id="client-email">—</div>
+                    </div>
+                    <div class="meta">
+                        <div class="meta__label">Phone</div>
+                        <div class="meta__value" id="client-phone">—</div>
+                    </div>
+                    <div class="meta">
+                        <div class="meta__label">Notes</div>
+                        <div class="meta__value" id="client-notes">—</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- --------------------------------------------------------- thread -->
+        <section class="section" aria-label="Conversation">
+            <div class="section__head">
+                <h2>Conversation</h2>
+                <span class="section__hint" id="message-count">…</span>
+            </div>
+            <div class="card">
+                <div class="card__body">
+                    <div class="thread" id="thread">
+                        <div class="thread__empty">Loading messages…</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ------------------------------------------------------- composer -->
+        <section class="section" id="composer-section" aria-label="Add a message">
+            <div class="card">
+                <div class="card__head"><h3>Add a message</h3></div>
+                <div class="card__body">
+                    <form id="message-form" class="composer" novalidate>
+                        <div id="message-alert" class="alert" role="alert" aria-live="polite"></div>
+
+                        <div>
+                            <label class="label" for="message-body">Message</label>
+                            <textarea class="textarea" id="message-body" maxlength="4000" required
+                                      placeholder="Share an update, ask a question, or record a decision…"></textarea>
+                            <div class="hint">Tip: press Ctrl + Enter to post.</div>
+                        </div>
+
+                        <div class="composer__foot">
+                            <label class="checkbox">
+                                <input type="checkbox" id="message-internal">
+                                <span>Internal note <span class="muted">(visible to managers and admins only)</span></span>
+                            </label>
+                            <button type="submit" class="btn" id="message-submit">Post message</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </section>
+    </div>
+</main>
+
+<footer class="app-foot">Admin++ &middot; Spring Boot + vanilla JS</footer>
+
+<script src="/js/app.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/task-detail.js"></script>
+</body>
+</html>

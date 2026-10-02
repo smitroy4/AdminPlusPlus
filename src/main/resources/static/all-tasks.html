@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1200">
+    <title>All Tasks | Admin++</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/css/style.css">
+    <script>try{if(localStorage.getItem('admin++-theme')==='dark')document.documentElement.dataset.theme='dark';}catch(e){}</script>
+</head>
+<body>
+
+<header class="app-header">
+    <div class="app-header__inner">
+        <a class="brand" href="/dashboard.html">
+            <span class="brand__mark">A++</span>
+            <span>Admin++</span>
+        </a>
+
+        <nav class="nav" aria-label="Main navigation">
+            <a class="nav__link" href="/dashboard.html">Dashboard</a>
+            <a class="nav__link" href="/my-tasks.html">My Tasks</a>
+            <a class="nav__link" href="/all-tasks.html">All Tasks</a>
+            <a class="nav__link" href="/profile.html">Profile</a>
+            <a class="nav__link is-hidden" data-role="ADMIN" href="/users.html">Users</a>
+            <a class="nav__link is-hidden" data-role="MANAGER" href="/clients.html">Clients</a>
+        </nav>
+
+        <div class="app-header__right">
+            <div class="user-chip">
+                <span class="user-chip__name" data-auth-username>…</span>
+                <span class="user-chip__role" data-auth-role></span>
+                <span class="avatar" data-auth-avatar>?</span>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" data-logout>Log out</button>
+        </div>
+    </div>
+</header>
+
+<main class="main">
+    <div id="all-tasks-error" class="alert" role="alert" aria-live="polite"></div>
+
+    <div class="page-head">
+        <div>
+            <h1>All tasks</h1>
+            <p>Every task in the portal. Sort any column, or narrow the list by client, agent, status or text.</p>
+        </div>
+        <div class="page-head__actions">
+            <span class="section__hint" id="all-tasks-count">…</span>
+        </div>
+    </div>
+
+    <!-- ------------------------------------------------------- filter bar -->
+    <section class="section" aria-label="Filters">
+        <div class="card">
+            <div class="card__body">
+                <div class="field-row" style="grid-template-columns:2fr 1fr 1fr 1fr auto;align-items:end">
+                    <div class="field">
+                        <label class="label" for="filter-search">Search</label>
+                        <input class="input" type="search" id="filter-search"
+                               placeholder="Task no, title, client or agent…">
+                    </div>
+                    <div class="field">
+                        <label class="label" for="filter-client">Client</label>
+                        <select class="select" id="filter-client">
+                            <option value="">All clients</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="filter-agent">Agent</label>
+                        <select class="select" id="filter-agent">
+                            <option value="">All agents</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label class="label" for="filter-status">Status</label>
+                        <select class="select" id="filter-status">
+                            <option value="">All statuses</option>
+                            <option value="OPEN">Open</option>
+                            <option value="IN_PROGRESS">In Progress</option>
+                            <option value="COMPLETED">Completed</option>
+                            <option value="CLOSED">Closed</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <button type="button" class="btn btn--secondary" id="filter-clear">Clear</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ------------------------------------------------------ tasks table -->
+    <section class="section" aria-label="All tasks">
+        <div class="card">
+            <div class="table-wrap">
+                <table class="table" id="all-tasks-table">
+                    <thead>
+                    <tr>
+                        <th data-sort-key="taskNo">Task no<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="title">Title<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="client">Client<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="status">Status<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="priority">Priority<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="assignedTo">Assigned to<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="createdBy">Created by<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="createdAt">Created<span class="sort-caret">▲</span></th>
+                    </tr>
+                    </thead>
+                    <tbody id="all-tasks-body">
+                    <tr><td colspan="8" class="muted" style="text-align:center;padding:30px">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+</main>
+
+<footer class="app-foot">Admin++ &middot; Spring Boot + vanilla JS</footer>
+
+<script src="/js/app.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/all-tasks.js"></script>
+</body>
+</html>

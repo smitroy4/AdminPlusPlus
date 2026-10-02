@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1200">
+    <title>Dashboard | Admin++</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/css/style.css">
+    <script>try{if(localStorage.getItem('admin++-theme')==='dark')document.documentElement.dataset.theme='dark';}catch(e){}</script>
+</head>
+<body>
+
+<header class="app-header">
+    <div class="app-header__inner">
+        <a class="brand" href="/dashboard.html">
+            <span class="brand__mark">A++</span>
+            <span>Admin++</span>
+        </a>
+
+        <nav class="nav" aria-label="Main navigation">
+            <a class="nav__link" href="/dashboard.html">Dashboard</a>
+            <a class="nav__link" href="/my-tasks.html">My Tasks</a>
+            <a class="nav__link" href="/all-tasks.html">All Tasks</a>
+            <a class="nav__link" href="/profile.html">Profile</a>
+            <a class="nav__link is-hidden" data-role="ADMIN" href="/users.html">Users</a>
+            <a class="nav__link is-hidden" data-role="MANAGER" href="/clients.html">Clients</a>
+        </nav>
+
+        <div class="app-header__right">
+            <div class="user-chip">
+                <span class="user-chip__name" data-auth-username>…</span>
+                <span class="user-chip__role" data-auth-role></span>
+                <span class="avatar" data-auth-avatar>?</span>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" data-logout>Log out</button>
+        </div>
+    </div>
+</header>
+
+<main class="main">
+    <div id="stats-error" class="alert" role="alert" aria-live="polite"></div>
+
+    <div class="page-head">
+        <div>
+            <h1>Dashboard</h1>
+            <p>Your tasks, associate metrics for coordinators, and the company backlog for managers and admins.</p>
+        </div>
+        <div class="page-head__actions">
+            <button type="button" class="btn is-hidden" data-role="MANAGER" data-open-create>New task</button>
+        </div>
+    </div>
+
+    <!-- ------------------------------------------------------------- tiles -->
+    <section class="section" aria-label="My task counts">
+        <div class="section__head"><h2>My work</h2></div>
+        <div class="tiles">
+            <div class="tile tile--open">
+                <div class="tile__label">Open</div>
+                <div class="tile__value" id="tile-my-open">–</div>
+            </div>
+            <div class="tile tile--progress">
+                <div class="tile__label">In progress</div>
+                <div class="tile__value" id="tile-my-progress">–</div>
+            </div>
+            <div class="tile tile--completed">
+                <div class="tile__label">Completed</div>
+                <div class="tile__value" id="tile-my-completed">–</div>
+            </div>
+            <div class="tile tile--total">
+                <div class="tile__label">Total assigned</div>
+                <div class="tile__value" id="tile-my-total">–</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ----------------------------------------- coordinator: associate load -->
+    <section class="section is-hidden" id="team-tiles-section" aria-label="Associate task counts">
+        <div class="section__head"><h2>Associate workload <span class="muted" style="font-weight:400">(team)</span></h2></div>
+        <div class="tiles">
+            <div class="tile tile--open">
+                <div class="tile__label">Open</div>
+                <div class="tile__value" id="tile-team-open">–</div>
+            </div>
+            <div class="tile tile--progress">
+                <div class="tile__label">In progress</div>
+                <div class="tile__value" id="tile-team-progress">–</div>
+            </div>
+            <div class="tile tile--completed">
+                <div class="tile__label">Completed</div>
+                <div class="tile__value" id="tile-team-completed">–</div>
+            </div>
+            <div class="tile tile--total">
+                <div class="tile__label">Total</div>
+                <div class="tile__value" id="tile-team-total">–</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ------------------------------------- manager/admin: company-wide load -->
+    <section class="section is-hidden" id="all-tiles-section" aria-label="Company-wide task counts">
+        <div class="section__head"><h2>Company-wide <span class="muted" style="font-weight:400">(everyone)</span></h2></div>
+        <div class="tiles">
+            <div class="tile tile--open">
+                <div class="tile__label">Open</div>
+                <div class="tile__value" id="tile-all-open">–</div>
+            </div>
+            <div class="tile tile--progress">
+                <div class="tile__label">In progress</div>
+                <div class="tile__value" id="tile-all-progress">–</div>
+            </div>
+            <div class="tile tile--completed">
+                <div class="tile__label">Completed</div>
+                <div class="tile__value" id="tile-all-completed">–</div>
+            </div>
+            <div class="tile tile--total">
+                <div class="tile__label">Total</div>
+                <div class="tile__value" id="tile-all-total">–</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ------------------------------------------------- my open tasks table -->
+    <section class="section" aria-label="My open tasks">
+        <div class="section__head">
+            <h2>My open tasks</h2>
+            <span class="section__hint" id="my-tasks-count">…</span>
+        </div>
+        <div class="card">
+            <div class="table-wrap">
+                <table class="table" id="my-tasks-table">
+                    <thead>
+                    <tr>
+                        <th data-sort-key="taskNo">Task no<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="title">Title<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="status">Status<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="priority">Priority<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="assignedTo">Assigned to<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="client">Client<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="createdAt">Created<span class="sort-caret">▲</span></th>
+                    </tr>
+                    </thead>
+                    <tbody id="my-tasks-body">
+                    <tr><td colspan="7" class="muted" style="text-align:center;padding:30px">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ------------------------------------------- all-open backlog, all roles -->
+    <section class="section" id="all-tasks-section" aria-label="All open tasks">
+        <div class="section__head">
+            <h2>All open tasks</h2>
+            <span class="section__hint" id="all-tasks-count">…</span>
+        </div>
+        <div class="card">
+            <div class="table-wrap">
+                <table class="table" id="all-tasks-table">
+                    <thead>
+                    <tr>
+                        <th data-sort-key="taskNo">Task no<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="title">Title<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="status">Status<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="priority">Priority<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="assignedTo">Assigned to<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="client">Client<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="createdBy">Created by<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="createdAt">Created<span class="sort-caret">▲</span></th>
+                    </tr>
+                    </thead>
+                    <tbody id="all-tasks-body">
+                    <tr><td colspan="8" class="muted" style="text-align:center;padding:30px">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- --------------------------------------------- role-scoped breakdowns -->
+    <section class="section" aria-label="Breakdowns">
+        <div class="field-row">
+            <div class="card">
+                <div class="card__head"><h2>Tasks by status</h2></div>
+                <div class="card__body" id="status-breakdown">
+                    <div class="muted">Loading…</div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card__head"><h2>Tasks by priority</h2></div>
+                <div class="card__body" id="priority-breakdown">
+                    <div class="muted">Loading…</div>
+                </div>
+            </div>
+        </div>
+    </section>
+</main>
+
+<footer class="app-foot">Admin++ &middot; Spring Boot + vanilla JS</footer>
+
+<!-- ------------------------------------------------------- create dialog -->
+<div class="modal" id="create-task-modal" role="dialog" aria-modal="true" aria-labelledby="create-task-heading">
+    <div class="modal__box">
+        <div class="modal__head">
+            <h3 id="create-task-heading">Create a new task</h3>
+            <button type="button" class="modal__close" id="create-task-close" aria-label="Close">&times;</button>
+        </div>
+        <form id="create-task-form" novalidate>
+            <div class="modal__body">
+                <div id="create-task-alert" class="alert" role="alert" aria-live="polite"></div>
+
+                <div class="field">
+                    <label class="label" for="task-title">Title <span class="req">*</span></label>
+                    <input class="input" type="text" id="task-title" maxlength="200" required
+                           placeholder="Short, actionable summary">
+                </div>
+
+                <div class="field">
+                    <label class="label" for="task-description">Description</label>
+                    <textarea class="textarea" id="task-description" maxlength="8000"
+                              placeholder="Context, acceptance criteria, links…"></textarea>
+                    <div class="hint">The description is posted as the first message of the thread.</div>
+                </div>
+
+                <div class="field-row">
+                    <div class="field">
+                        <label class="label" for="task-priority">Priority <span class="req">*</span></label>
+                        <select class="select" id="task-priority">
+                            <option value="LOW">Low</option>
+                            <option value="MEDIUM" selected>Medium</option>
+                            <option value="HIGH">High</option>
+                            <option value="URGENT">Urgent</option>
+                        </select>
+                    </div>
+                    <div class="field" id="field-assignee">
+                        <label class="label" for="task-assignee">Assign to</label>
+                        <select class="select" id="task-assignee">
+                            <option value="">— Unassigned —</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="modal__foot">
+                <button type="button" class="btn btn--secondary" id="create-task-cancel">Cancel</button>
+                <button type="submit" class="btn" id="create-task-submit">Create task</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script src="/js/app.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/dashboard.js"></script>
+</body>
+</html>

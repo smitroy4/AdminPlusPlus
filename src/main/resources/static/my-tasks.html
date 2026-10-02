@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1200">
+    <title>My Tasks | Admin++</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/css/style.css">
+    <script>try{if(localStorage.getItem('admin++-theme')==='dark')document.documentElement.dataset.theme='dark';}catch(e){}</script>
+</head>
+<body>
+
+<header class="app-header">
+    <div class="app-header__inner">
+        <a class="brand" href="/dashboard.html">
+            <span class="brand__mark">A++</span>
+            <span>Admin++</span>
+        </a>
+
+        <nav class="nav" aria-label="Main navigation">
+            <a class="nav__link" href="/dashboard.html">Dashboard</a>
+            <a class="nav__link" href="/my-tasks.html">My Tasks</a>
+            <a class="nav__link" href="/all-tasks.html">All Tasks</a>
+            <a class="nav__link" href="/profile.html">Profile</a>
+            <a class="nav__link is-hidden" data-role="ADMIN" href="/users.html">Users</a>
+            <a class="nav__link is-hidden" data-role="MANAGER" href="/clients.html">Clients</a>
+        </nav>
+
+        <div class="app-header__right">
+            <div class="user-chip">
+                <span class="user-chip__name" data-auth-username>…</span>
+                <span class="user-chip__role" data-auth-role></span>
+                <span class="avatar" data-auth-avatar>?</span>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" data-logout>Log out</button>
+        </div>
+    </div>
+</header>
+
+<main class="main">
+    <div id="my-tasks-error" class="alert" role="alert" aria-live="polite"></div>
+
+    <div class="page-head">
+        <div>
+            <h1>My tasks</h1>
+            <p>Everything currently assigned to you, including completed and closed items.</p>
+        </div>
+        <div class="page-head__actions">
+            <a class="btn btn--secondary" href="/dashboard.html">Back to dashboard</a>
+        </div>
+    </div>
+
+    <section class="section" aria-label="Tasks assigned to me">
+        <div class="section__head">
+            <h2>Assigned to me</h2>
+            <span class="section__hint" id="mine-count">…</span>
+        </div>
+        <div class="card">
+            <div class="table-wrap">
+                <table class="table" id="mine-table">
+                    <thead>
+                    <tr>
+                        <th data-sort-key="taskNo">Task no<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="title">Title<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="status">Status<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="priority">Priority<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="client">Client<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="createdBy">Created by<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="createdAt">Created<span class="sort-caret">▲</span></th>
+                    </tr>
+                    </thead>
+                    <tbody id="mine-body">
+                    <tr><td colspan="7" class="muted" style="text-align:center;padding:30px">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+</main>
+
+<footer class="app-foot">Admin++ &middot; Spring Boot + vanilla JS</footer>
+
+<script src="/js/app.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/my-tasks.js"></script>
+</body>
+</html>

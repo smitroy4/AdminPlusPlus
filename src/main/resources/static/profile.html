@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1200">
+    <title>Profile | Admin++</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/css/style.css">
+    <script>try{if(localStorage.getItem('admin++-theme')==='dark')document.documentElement.dataset.theme='dark';}catch(e){}</script>
+</head>
+<body>
+
+<header class="app-header">
+    <div class="app-header__inner">
+        <a class="brand" href="/dashboard.html">
+            <span class="brand__mark">A++</span>
+            <span>Admin++</span>
+        </a>
+
+        <nav class="nav" aria-label="Main navigation">
+            <a class="nav__link" href="/dashboard.html">Dashboard</a>
+            <a class="nav__link" href="/my-tasks.html">My Tasks</a>
+            <a class="nav__link" href="/all-tasks.html">All Tasks</a>
+            <a class="nav__link" href="/profile.html">Profile</a>
+            <a class="nav__link is-hidden" data-role="ADMIN" href="/users.html">Users</a>
+            <a class="nav__link is-hidden" data-role="MANAGER" href="/clients.html">Clients</a>
+        </nav>
+
+        <div class="app-header__right">
+            <div class="user-chip">
+                <span class="user-chip__name" data-auth-username>…</span>
+                <span class="user-chip__role" data-auth-role></span>
+                <span class="avatar" data-auth-avatar>?</span>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" data-logout>Log out</button>
+        </div>
+    </div>
+</header>
+
+<main class="main">
+    <div id="profile-error" class="alert" role="alert" aria-live="polite"></div>
+
+    <div class="page-head">
+        <div>
+            <h1>My profile</h1>
+            <p>Update your contact details and password. Username and role are managed by an administrator.</p>
+        </div>
+        <div class="page-head__actions">
+            <a class="btn btn--secondary" href="/dashboard.html">Back to dashboard</a>
+        </div>
+    </div>
+
+    <div class="field-row" style="align-items:start">
+        <!-- ------------------------------------------------- account details -->
+        <section class="section" aria-label="Account details">
+            <div class="card">
+                <div class="card__head"><h2>Account details</h2></div>
+                <div class="card__body">
+                    <div class="detail-grid" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:18px">
+                        <div class="meta">
+                            <div class="meta__label">Username</div>
+                            <div class="meta__value" id="profile-username">—</div>
+                        </div>
+                        <div class="meta">
+                            <div class="meta__label">Role</div>
+                            <div class="meta__value" id="profile-role">—</div>
+                        </div>
+                    </div>
+
+                    <form id="profile-form" novalidate>
+                        <div id="profile-alert" class="alert" role="alert" aria-live="polite"></div>
+
+                        <div class="field">
+                            <label class="label" for="profile-email">Email <span class="req">*</span></label>
+                            <input class="input" type="email" id="profile-email" maxlength="255" required
+                                   autocomplete="email">
+                        </div>
+
+                        <button type="submit" class="btn" id="profile-submit">Save details</button>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <!-- ------------------------------------------------- change password -->
+        <section class="section" aria-label="Change password">
+            <div class="card">
+                <div class="card__head"><h2>Change password</h2></div>
+                <div class="card__body">
+                    <form id="password-form" novalidate>
+                        <div id="password-alert" class="alert" role="alert" aria-live="polite"></div>
+
+                        <div class="field">
+                            <label class="label" for="current-password">Current password <span class="req">*</span></label>
+                            <input class="input" type="password" id="current-password" required
+                                   autocomplete="current-password">
+                        </div>
+
+                        <div class="field">
+                            <label class="label" for="new-password">New password <span class="req">*</span></label>
+                            <input class="input" type="password" id="new-password" minlength="8" maxlength="100" required
+                                   autocomplete="new-password">
+                            <div class="hint">At least 8 characters and different from the current one.</div>
+                        </div>
+
+                        <div class="field">
+                            <label class="label" for="confirm-password">Confirm new password <span class="req">*</span></label>
+                            <input class="input" type="password" id="confirm-password" minlength="8" maxlength="100" required
+                                   autocomplete="new-password">
+                        </div>
+
+                        <button type="submit" class="btn" id="password-submit">Change password</button>
+                    </form>
+                </div>
+            </div>
+        </section>
+    </div>
+</main>
+
+<footer class="app-foot">Admin++ &middot; Spring Boot + vanilla JS</footer>
+
+<script src="/js/app.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/profile.js"></script>
+</body>
+</html>

@@ -1,0 +1,106 @@
+# ---------------------------------------------------------------------------
+# TaskPortal - application configuration
+#
+# Every DB value can be overridden with an environment variable so the same
+# build works against local PostgreSQL, Neon (default) or any other instance.
+# ---------------------------------------------------------------------------
+spring:
+  application:
+    name: taskportal
+
+  datasource:
+    url: ${TASKPORTAL_DB_URL:jdbc:postgresql://ep-damp-feather-b3d0b8gn-pooler.c-4.ap-southeast-1.aws.neon.tech/taskportal-db?sslmode=require}
+    username: ${TASKPORTAL_DB_USERNAME:taskportal-db_owner}
+    password: ${TASKPORTAL_DB_PASSWORD:npg_DwFsrQkJK1l7}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: taskportal-pool
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      validation-timeout: 5000
+      max-lifetime: 900000
+
+  jpa:
+    hibernate:
+      ddl-auto: create
+    open-in-view: false
+    show-sql: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+
+  sql:
+    init:
+      mode: never
+
+  mvc:
+    problemdetails:
+      enabled: false
+
+  web:
+    resources:
+      static-locations: classpath:/static/
+      cache:
+        period: 0
+
+server:
+  port: ${TASKPORTAL_PORT:8080}
+  servlet:
+    session:
+      timeout: 30m
+      cookie:
+        http-only: true
+        same-site: lax
+        name: TPJSESSIONID
+  error:
+    include-message: never
+    include-stacktrace: never
+    whitelabel:
+      enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.smit.taskportal: INFO
+    org.hibernate.SQL: WARN
+
+# ---------------------------------------------------------------------------
+# Application specific settings
+# ---------------------------------------------------------------------------
+app:
+  seed:
+    # Creates the demo accounts (and sample tasks) on first start.
+    enabled: true
+    admin-username: admin
+    admin-password: ${TASKPORTAL_ADMIN_PASSWORD:Admin@12345}
+    admin-email: admin@taskportal.local
+    manager-username: manager
+    manager-password: ${TASKPORTAL_MANAGER_PASSWORD:Manager@12345}
+    manager-email: manager@taskportal.local
+    coordinator-username: coordinator
+    coordinator-password: ${TASKPORTAL_COORDINATOR_PASSWORD:Coordinator@12345}
+    coordinator-email: coordinator@taskportal.local
+    employee-username: employee
+    employee-password: ${TASKPORTAL_EMPLOYEE_PASSWORD:Employee@12345}
+    employee-email: employee@taskportal.local
+    # External customer login (Role.CLIENT), linked to the seeded "Acme Corporation" client.
+    client-username: client
+    client-password: ${TASKPORTAL_CLIENT_PASSWORD:Client@12345}
+    client-email: client@acme.example
+    sample-tasks: true

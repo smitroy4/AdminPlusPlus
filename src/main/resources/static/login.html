@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1200">
+    <title>Sign in | Admin++</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/css/style.css">
+    <script>try{if(localStorage.getItem('admin++-theme')==='dark')document.documentElement.dataset.theme='dark';}catch(e){}</script>
+</head>
+<body class="login-page">
+
+<main class="login-card">
+    <div class="login-card__brand">
+        <a class="brand" href="/">
+            <span class="brand__mark">A++</span>
+            <span>Admin++</span>
+        </a>
+    </div>
+
+    <h1>Sign in</h1>
+    <p class="login-card__sub">Use your company credentials to continue.</p>
+
+    <div id="login-alert" class="alert" role="alert" aria-live="polite"></div>
+
+    <form id="login-form" method="post" action="/login" autocomplete="on" novalidate>
+        <input type="hidden" name="_csrf" value="">
+
+        <div class="field">
+            <label class="label" for="username">Username <span class="req">*</span></label>
+            <input class="input" type="text" id="username" name="username"
+                   autocomplete="username" autocapitalize="none" spellcheck="false" required>
+        </div>
+
+        <div class="field">
+            <label class="label" for="password">Password <span class="req">*</span></label>
+            <input class="input" type="password" id="password" name="password"
+                   autocomplete="current-password" required>
+        </div>
+
+        <input type="hidden" id="next" name="next" value="">
+
+        <button type="submit" id="login-submit" class="btn btn--block">Sign in</button>
+    </form>
+
+    <div class="demo-accounts">
+        <div class="demo-accounts__title">Demo accounts - click to fill</div>
+        <table>
+            <tr>
+                <td>Administrator</td>
+                <td><button type="button" data-demo-user="admin" data-demo-pass="Admin@12345">admin / Admin@12345</button></td>
+            </tr>
+            <tr>
+                <td>Manager</td>
+                <td><button type="button" data-demo-user="manager" data-demo-pass="Manager@12345">manager / Manager@12345</button></td>
+            </tr>
+            <tr>
+                <td>Coordinator</td>
+                <td><button type="button" data-demo-user="coordinator" data-demo-pass="Coordinator@12345">coordinator / Coordinator@12345</button></td>
+            </tr>
+            <tr>
+                <td>Associate</td>
+                <td><button type="button" data-demo-user="employee" data-demo-pass="Employee@12345">employee / Employee@12345</button></td>
+            </tr>
+            <tr>
+                <td>Client</td>
+                <td><button type="button" data-demo-user="client" data-demo-pass="Client@12345">client / Client@12345</button></td>
+            </tr>
+        </table>
+    </div>
+</main>
+
+<script src="/js/app.js"></script>
+<script src="/js/login.js"></script>
+</body>
+</html>

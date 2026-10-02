@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1200">
+    <title>Users | Admin++</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/css/style.css">
+    <script>try{if(localStorage.getItem('admin++-theme')==='dark')document.documentElement.dataset.theme='dark';}catch(e){}</script>
+</head>
+<body>
+
+<header class="app-header">
+    <div class="app-header__inner">
+        <a class="brand" href="/dashboard.html">
+            <span class="brand__mark">A++</span>
+            <span>Admin++</span>
+        </a>
+
+        <nav class="nav" aria-label="Main navigation">
+            <a class="nav__link" href="/dashboard.html">Dashboard</a>
+            <a class="nav__link" href="/my-tasks.html">My Tasks</a>
+            <a class="nav__link" href="/all-tasks.html">All Tasks</a>
+            <a class="nav__link" href="/profile.html">Profile</a>
+            <a class="nav__link is-hidden" data-role="ADMIN" href="/users.html">Users</a>
+            <a class="nav__link is-hidden" data-role="MANAGER" href="/clients.html">Clients</a>
+        </nav>
+
+        <div class="app-header__right">
+            <div class="user-chip">
+                <span class="user-chip__name" data-auth-username>…</span>
+                <span class="user-chip__role" data-auth-role></span>
+                <span class="avatar" data-auth-avatar>?</span>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" data-logout>Log out</button>
+        </div>
+    </div>
+</header>
+
+<main class="main">
+    <div id="users-error" class="alert" role="alert" aria-live="polite"></div>
+
+    <div id="users-content">
+        <div class="page-head">
+            <div>
+                <h1>User management</h1>
+                <p>Administrator only - create and manage associate, coordinator and manager accounts.</p>
+            </div>
+            <div class="page-head__actions">
+                <button type="button" class="btn" data-open-create-user>New user</button>
+            </div>
+        </div>
+
+        <section class="section" aria-label="Accounts">
+            <div class="card">
+                <div class="table-wrap">
+                    <table class="table" id="users-table">
+                        <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Email</th>
+                            <th>Change role</th>
+                            <th>Current role</th>
+                            <th>Created</th>
+                            <th class="text-right">Action</th>
+                        </tr>
+                        </thead>
+                        <tbody id="users-body">
+                        <tr><td colspan="6" class="muted" style="text-align:center;padding:30px">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </div>
+</main>
+
+<footer class="app-foot">Admin++ &middot; Spring Boot + vanilla JS</footer>
+
+<!-- ------------------------------------------------------- create dialog -->
+<div class="modal" id="create-user-modal" role="dialog" aria-modal="true" aria-labelledby="create-user-heading">
+    <div class="modal__box">
+        <div class="modal__head">
+            <h3 id="create-user-heading">Create a user</h3>
+            <button type="button" class="modal__close" id="create-user-close" aria-label="Close">&times;</button>
+        </div>
+        <form id="create-user-form" novalidate>
+            <div class="modal__body">
+                <div id="create-user-alert" class="alert" role="alert" aria-live="polite"></div>
+
+                <div class="field">
+                    <label class="label" for="new-username">Username <span class="req">*</span></label>
+                    <input class="input" type="text" id="new-username" minlength="3" maxlength="64"
+                           pattern="[A-Za-z0-9._\-]+" required autocomplete="off">
+                    <div class="hint">Letters, digits, dot, underscore and hyphen.</div>
+                </div>
+
+                <div class="field">
+                    <label class="label" for="new-email">Email <span class="req">*</span></label>
+                    <input class="input" type="email" id="new-email" maxlength="255" required autocomplete="off">
+                </div>
+
+                <div class="field-row">
+                    <div class="field">
+                        <label class="label" for="new-password">Password <span class="req">*</span></label>
+                        <input class="input" type="password" id="new-password" minlength="8" maxlength="100"
+                               required autocomplete="new-password">
+                    </div>
+                    <div class="field">
+                        <label class="label" for="new-role">Role <span class="req">*</span></label>
+                        <select class="select" id="new-role">
+                            <option value="ASSOCIATE" selected>ASSOCIATE</option>
+                            <option value="COORDINATOR">COORDINATOR</option>
+                            <option value="MANAGER">MANAGER</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="modal__foot">
+                <button type="button" class="btn btn--secondary" id="create-user-cancel">Cancel</button>
+                <button type="submit" class="btn" id="create-user-submit">Create user</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- --------------------------------------------------------- edit dialog -->
+<div class="modal" id="edit-user-modal" role="dialog" aria-modal="true" aria-labelledby="edit-user-heading">
+    <div class="modal__box">
+        <div class="modal__head">
+            <h3 id="edit-user-heading">Edit user</h3>
+            <button type="button" class="modal__close" id="edit-user-close" aria-label="Close">&times;</button>
+        </div>
+        <form id="edit-user-form" novalidate>
+            <div class="modal__body">
+                <div id="edit-user-alert" class="alert" role="alert" aria-live="polite"></div>
+                <input type="hidden" id="edit-user-id">
+
+                <div class="field">
+                    <label class="label" for="edit-username">Username</label>
+                    <input class="input" type="text" id="edit-username" minlength="3" maxlength="64"
+                           pattern="[A-Za-z0-9._\-]+" autocomplete="off">
+                    <div class="hint">Letters, digits, dot, underscore and hyphen.</div>
+                </div>
+
+                <div class="field">
+                    <label class="label" for="edit-email">Email</label>
+                    <input class="input" type="email" id="edit-email" maxlength="255" autocomplete="off">
+                </div>
+
+                <div class="field">
+                    <label class="label" for="edit-password">Reset password</label>
+                    <input class="input" type="password" id="edit-password" minlength="8" maxlength="100"
+                           autocomplete="new-password" placeholder="Leave blank to keep the current password">
+                </div>
+            </div>
+            <div class="modal__foot">
+                <button type="button" class="btn btn--secondary" id="edit-user-cancel">Cancel</button>
+                <button type="submit" class="btn" id="edit-user-submit">Save changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script src="/js/app.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/users.js"></script>
+</body>
+</html>
