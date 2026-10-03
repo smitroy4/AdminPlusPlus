@@ -240,7 +240,8 @@ const App = (function () {
     const STATUS_LABELS = {
         OPEN: 'Open',
         IN_PROGRESS: 'In Progress',
-        COMPLETED: 'Completed',
+        QUALITY: 'Quality',
+        SUBMITTED: 'Submitted',
         CLOSED: 'Closed'
     };
 

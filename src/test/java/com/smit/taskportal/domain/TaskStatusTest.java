@@ -10,16 +10,18 @@ class TaskStatusTest {
     void openAndInProgressAreActive() {
         assertThat(TaskStatus.OPEN.isActive()).isTrue();
         assertThat(TaskStatus.IN_PROGRESS.isActive()).isTrue();
-        assertThat(TaskStatus.COMPLETED.isActive()).isFalse();
+        assertThat(TaskStatus.QUALITY.isActive()).isTrue();
+        assertThat(TaskStatus.SUBMITTED.isActive()).isTrue();
         assertThat(TaskStatus.CLOSED.isActive()).isFalse();
     }
 
     @Test
-    void completedAndClosedAreFinal() {
-        assertThat(TaskStatus.COMPLETED.isFinal()).isTrue();
+    void closedIsTheOnlyFinalState() {
         assertThat(TaskStatus.CLOSED.isFinal()).isTrue();
         assertThat(TaskStatus.OPEN.isFinal()).isFalse();
         assertThat(TaskStatus.IN_PROGRESS.isFinal()).isFalse();
+        assertThat(TaskStatus.QUALITY.isFinal()).isFalse();
+        assertThat(TaskStatus.SUBMITTED.isFinal()).isFalse();
     }
 
     @Test
@@ -32,22 +34,22 @@ class TaskStatusTest {
     @Test
     void happyPathIsAllowed() {
         assertThat(TaskStatus.OPEN.canTransitionTo(TaskStatus.IN_PROGRESS)).isTrue();
-        assertThat(TaskStatus.IN_PROGRESS.canTransitionTo(TaskStatus.COMPLETED)).isTrue();
-        assertThat(TaskStatus.COMPLETED.canTransitionTo(TaskStatus.CLOSED)).isTrue();
+        assertThat(TaskStatus.IN_PROGRESS.canTransitionTo(TaskStatus.QUALITY)).isTrue();
+        assertThat(TaskStatus.QUALITY.canTransitionTo(TaskStatus.SUBMITTED)).isTrue();
     }
 
     @Test
     void reworkAndReopenAreAllowed() {
         assertThat(TaskStatus.IN_PROGRESS.canTransitionTo(TaskStatus.OPEN)).isTrue();
-        assertThat(TaskStatus.COMPLETED.canTransitionTo(TaskStatus.IN_PROGRESS)).isTrue();
+        assertThat(TaskStatus.QUALITY.canTransitionTo(TaskStatus.IN_PROGRESS)).isTrue();
         assertThat(TaskStatus.CLOSED.canTransitionTo(TaskStatus.OPEN)).isTrue();
     }
 
     @Test
     void skippingStepsIsRejected() {
-        assertThat(TaskStatus.OPEN.canTransitionTo(TaskStatus.COMPLETED)).isFalse();
+        assertThat(TaskStatus.OPEN.canTransitionTo(TaskStatus.QUALITY)).isFalse();
         assertThat(TaskStatus.OPEN.canTransitionTo(TaskStatus.CLOSED)).isTrue();
-        assertThat(TaskStatus.COMPLETED.canTransitionTo(TaskStatus.OPEN)).isTrue();
+        assertThat(TaskStatus.QUALITY.canTransitionTo(TaskStatus.OPEN)).isTrue();
     }
 
     @Test

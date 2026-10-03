@@ -31,7 +31,7 @@ async function loadStats() {
         const stats = response.data;
         setTile('#tile-my-open', stats.myOpen);
         setTile('#tile-my-progress', stats.myInProgress);
-        setTile('#tile-my-completed', stats.myCompleted);
+        setTile('#tile-my-quality', stats.myQuality);
         setTile('#tile-my-total', stats.myTotal);
         if (Auth.isClient()) {
             /* Clients are never the assignee: the tiles count their customer's tasks. */
@@ -47,7 +47,7 @@ async function loadStats() {
             Auth.show(App.$('#all-tiles-section'));
             setTile('#tile-all-open', stats.allOpen);
             setTile('#tile-all-progress', stats.allInProgress);
-            setTile('#tile-all-completed', stats.allCompleted);
+            setTile('#tile-all-quality', stats.allQuality);
             setTile('#tile-all-total', stats.allTotal);
         }
 
@@ -178,7 +178,7 @@ function elapsed(from, now) {
 /* ------------------------------------------------------------------ tables */
 
 const PRIORITY_ORDER = { URGENT: 2, NORMAL: 1 };
-const STATUS_ORDER = { OPEN: 4, IN_PROGRESS: 3, COMPLETED: 2, CLOSED: 1 };
+const STATUS_ORDER = { OPEN: 5, IN_PROGRESS: 4, QUALITY: 3, SUBMITTED: 2, CLOSED: 1 };
 
 function accessors(withCreator) {
     const map = {

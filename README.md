@@ -98,6 +98,7 @@ src/main/java/com/smit/taskportal
 │   ├── TaskDto, TaskDetailDto, TaskMessageDto
 │   ├── UserDto, UserSummaryDto, ClientDto, ClientSummaryDto
 │   ├── DashboardStatsDto, CsrfDto, NotificationDto
+│   ├── AssociateSubmissionDto, ReviewSubmissionRequest
 │   └── *Request              Validated inbound payloads
 ├── bootstrap/
 │   └── DataInitializer        Seeds the demo accounts and sample tasks
@@ -109,11 +110,13 @@ src/main/java/com/smit/taskportal
 │   ├── DashboardController    /api/dashboard/*, /api/tasks/*
 │   ├── TaskController         /api/task/{id}, POST /api/task, PATCH …/status, POST …/escalate
 │   ├── TaskMessageController  /api/task/{id}/message[s]
+│   ├── TaskSubmissionController /api/task/{id}/associate-submission[s]
+│   ├── AssociateSubmissionController  alias at /api/task/{id}/submissions (unused by the UI)
 │   ├── NotificationController /api/notifications (navbar bell feed)
 │   ├── ClientController       /api/clients[/id] (details: MANAGER, ADMIN)
 │   ├── ManagerController      /api/manager/**   (MANAGER, ADMIN)
 │   └── AdminUserController    /api/admin/**     (ADMIN)
-├── domain/                    User, Task, TaskMessage, Client + Role/TaskStatus/TaskPriority
+├── domain/                    User, Task, TaskMessage, Client, AssociateSubmission + enums
 ├── exception/
 │   ├── AppException           sealed root of expected failures
 │   ├── ResourceNotFoundException / UnauthorizedException / ForbiddenException
@@ -124,7 +127,7 @@ src/main/java/com/smit/taskportal
 │   ├── AppUserPrincipal       record implementing UserDetails
 │   ├── CurrentUserHolder      resolves the principal from the security context
 │   └── RestAware{AuthenticationEntryPoint,AccessDeniedHandler}
-└── service/                   UserService, TaskService, TaskMessageService, ClientService, NotificationService, TaskNoGenerator
+└── service/                   UserService, TaskService, TaskMessageService, ClientService, NotificationService, AssociateSubmissionService, TaskNoGenerator
 
 src/main/resources
 ├── application.yml
@@ -165,10 +168,20 @@ client_id     FK → clients    priority      NN (enum)        is_escalation NN,
                                                              created_at    NN
   (CLIENT accounts only)      assigned_to   FK → users (nullable)
                              client_id     FK → clients (nullable)
-                             created_by    FK → users
-                             escalated_by  FK → users (nullable)
-                             created_at /  NN
-                             updated_at    NN
+                              created_by    FK → users
+                              escalated_by  FK → users (nullable)
+                              created_at /  NN
+                              updated_at    NN
+                              assigned_at   when the current assignee took it
+                              status_changed_at   last status move (clears the bell)
+
+associate_submissions
+---------------------
+id            PK
+task_id       FK → tasks        employee_id  FK → users
+content       NN (TEXT)         status       NN (enum PENDING | REVIEWED)
+reviewed_by   FK → users, reviewed_at
+created_at /  updated_at        append-only, never overwritten
 
 clients
 -------
@@ -185,7 +198,7 @@ concurrent task creation can never collide, yielding `TASK-00001`, `TASK-00002`,
 | Enum           | Values                                                    |
 |----------------|-----------------------------------------------------------|
 | `Role`         | `CLIENT`, `ASSOCIATE`, `COORDINATOR`, `MANAGER`, `ADMIN`     |
-| `TaskStatus`   | `OPEN`, `IN_PROGRESS`, `COMPLETED`, `CLOSED`                 |
+| `TaskStatus`   | `OPEN`, `IN_PROGRESS`, `QUALITY`, `SUBMITTED`, `CLOSED`     |
 | `TaskPriority` | `NORMAL`, `URGENT`                                        |
 
 Role hierarchy (least to most privileged): `CLIENT` < `ASSOCIATE` <
@@ -196,17 +209,23 @@ the manager endpoints; they additionally see the workload metrics of every
 `CLIENT` is an external account: it is linked to one row of `clients`, can only
 ever see that customer's tasks (name of the customer on each task; the contact
 block stays reserved for MANAGER / ADMIN), and may only comment on those tasks —
-never claim, assign or change status.
+never claim, assign or change status. An `ASSOCIATE` never writes in the thread
+either: its composer turns the text into a submission (see below).
 
 Allowed transitions:
 
 ```
-OPEN ──▶ IN_PROGRESS ──▶ COMPLETED ──▶ CLOSED
-  ▲            │              │           │
-  └────────────┴──────────────┴───────────┘
+OPEN ──▶ IN_PROGRESS ──▶ QUALITY ──▶ SUBMITTED ──▶ CLOSED
+  ▲            │            │            │           │
+  └────────────┴────────────┴────────────┴───────────┘
 ```
 
-Moving a task *out* of `CLOSED` requires MANAGER or ADMIN.
+`QUALITY` is where an associate's work waits for review: submitting an update
+sets the task to `QUALITY` (unless it is already `QUALITY` or `CLOSED`) and
+bumps `updatedAt`.
+Answering that submission — or a coordinator/manager/admin posting any reply on
+a `QUALITY` task — pushes it to `SUBMITTED`. Moving a task *out* of `CLOSED`
+requires MANAGER or ADMIN.
 
 ---
 
@@ -223,7 +242,7 @@ All responses share one envelope:
 |--------|-----------------------------------|-------------------|--------------------------------------|
 | GET    | `/api/csrf`                       | public            | Issues the CSRF token/cookie          |
 | GET    | `/api/me`                         | authenticated     | Current user                         |
-| GET    | `/api/notifications`              | authenticated     | Activity feed for the navbar bell (role-scoped) |
+| GET    | `/api/notifications`              | authenticated     | Activity feed for the navbar bell (role-scoped; a task's status move drops every entry about it) |
 | PUT    | `/api/me/profile`                 | authenticated     | Change own email                     |
 | POST   | `/api/auth/change-password`       | authenticated     | Change own password                  |
 | GET    | `/api/dashboard/stats`            | authenticated     | Role-scoped tile counters + breakdowns |
@@ -233,16 +252,19 @@ All responses share one envelope:
 | GET    | `/api/tasks/all-open`             | authenticated     | Active backlog (client: own customer only) |
 | GET    | `/api/tasks/all`                  | authenticated     | Every task, any status (same scoping) |
 | GET    | `/api/tasks/by-status?status=`    | authenticated     | Filter by a single status            |
-| GET    | `/api/task/{id}`                  | owner / assignee / manager | Task + visible thread + escalation conversation (participants) |
+| GET    | `/api/task/{id}`                  | any internal role (CLIENT: own customer) | Task + visible thread + escalation conversation (participants) |
 | POST   | `/api/task`                       | MANAGER, ADMIN    | Create a task                        |
 | PUT    | `/api/task/{id}`                  | creator / manager | Replace title, description, priority (`title` required) |
 | PATCH  | `/api/task/{id}/status`           | assignee / creator / manager | Move along the life-cycle |
 | POST   | `/api/task/{id}/assign`           | manager, or self on a free task | Assign            |
 | DELETE | `/api/task/{id}/assign`           | MANAGER, ADMIN    | Release back to the pool             |
-| GET    | `/api/task/{id}/messages`         | owner / assignee / manager | Visible thread               |
-| POST   | `/api/task/{id}/message`          | owner / assignee / manager / client | Post a reply (client: own customer only, never internal) |
+| GET    | `/api/task/{id}/messages`         | any internal role (CLIENT: own customer) | Visible thread               |
+| POST   | `/api/task/{id}/message`          | any internal role except ASSOCIATE, or client on its own customer | Post a reply (never internal for CLIENT; an ASSOCIATE is told to submit an update instead) |
 | POST   | `/api/task/{id}/escalate`         | CLIENT opens, MANAGER / ADMIN reply | Private escalation conversation (201) |
-| DELETE | `/api/task/{id}/message/{mid}`    | author, or ADMIN   | Retract a comment                  |
+| DELETE | `/api/task/{id}/message/{mid}`    | ADMIN only        | Remove a message from the thread (and the escalation conversation) |
+| GET    | `/api/task/{id}/associate-submissions` | task visibility (CLIENT: empty list) | Every submission, newest first |
+| POST   | `/api/task/{id}/associate-submission`  | ASSOCIATE      | Post an update for review (201, sets `QUALITY`, bumps `updatedAt`) |
+| POST   | `/api/task/{id}/associate-submission/{sid}/review` | COORDINATOR, MANAGER, ADMIN | API-only reply path (the UI replies through the composer): appends the answer, marks the submission `REVIEWED`, sets `SUBMITTED` |
 | GET    | `/api/clients`                    | authenticated     | Client list (CLIENT: own customer only; contact block: MANAGER, ADMIN) |
 | GET    | `/api/clients/{id}`               | authenticated     | One client (CLIENT: own customer only, else 404; same detail rule) |
 | GET    | `/api/manager/users`              | MANAGER, ADMIN    | Users for the assign dropdown (clients excluded) |
@@ -301,18 +323,43 @@ curl -b cookies.txt -X POST http://localhost:8080/api/task \
 |-----------------------------------------|:------:|:---------:|:-----------:|:-------:|:-----:|
 | Sign in, view own tasks                 | ✅ | ✅ | ✅ | ✅ | ✅ |
 | See the open / all tasks backlog        | own customer's | ✅ | ✅ | ✅ | ✅ |
+| Open any task detail + thread           | own customer's | ✅ | ✅ | ✅ | ✅ |
 | Create a task                           | ❌ | ❌ | ❌ | ✅ | ✅ |
-| Comment on a task you own/are assigned  | own customer's | ✅ | ✅ | ✅ | ✅ |
+| Comment on a task                       | own customer's | ❌ (submit an update instead) | ✅ | ✅ | ✅ |
+| Submit an update for review             | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Review an associate's submission        | ❌ | ❌ | ✅ | ✅ | ✅ |
 | Claim an unassigned task                | ❌ | ✅ | ✅ | ✅ | ✅ |
 | Assign a task to somebody else          | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Edit title / description / priority     | ❌ | own only | own only | ✅ | ✅ |
 | Post internal notes                     | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Escalate a task to a manager            | ✅ | ❌ | ❌ | reply only | reply only |
+| Delete a message                        | ❌ | ❌ | ❌ | ❌ | ✅ |
 | Unassign a task                         | ❌ | ❌ | ❌ | ✅ | ✅ |
 | See associate workload metrics          | ❌ | ❌ | ✅ | ✅ | ✅ |
 | See client contact details              | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Edit own email / password               | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Manage accounts                         | ❌ | ❌ | ❌ | ❌ | ✅ |
+
+**Associate submissions.** An ASSOCIATE cannot use the reply composer at all
+(`POST /api/task/{id}/message` answers 403 with a pointer to the flow). Its
+composer posts to `/api/task/{id}/associate-submission` instead, which stores an
+`associate_submissions` row, sets the task to `QUALITY` and bumps `updatedAt`.
+Every submission stays for good — nothing is overwritten. The task page lists
+them newest first as collapsed cards *Submitted by {Employee Name} | {Time}* in
+their own **Submitted for Quality Approval** section below the composer
+(clients, and an empty list, hide that section).
+
+Those cards are read only: a reviewer copies the text into the **Add a message**
+box above and replies on the ordinary thread. A COORDINATOR, MANAGER or ADMIN
+doing so while the task sits in `QUALITY` moves it to `SUBMITTED`. The same
+answer can also be filed through
+`POST /api/task/{id}/associate-submission/{sid}/review` — an API path the UI
+does not use — which additionally marks the submission `REVIEWED`. CLIENT
+accounts get an empty list.
+
+**Deleting messages** is an ADMIN-only power, on the server
+(`TaskMessageService.deleteMessage`) and in the UI: the trash icon never renders
+for any other role, even for a message they wrote themselves.
 
 **Internal notes** are visible to MANAGER and ADMIN, plus their own author.
 **Client accounts** share the message composer with everybody else but never
@@ -335,6 +382,13 @@ display-only — it renders that conversation once it exists.
 | COORDINATOR | own tasks    | every task touching an ASSOCIATE | —                     | associate tasks  |
 | MANAGER     | own tasks    | every task touching an ASSOCIATE | ✅                    | everything       |
 | ADMIN       | own tasks    | every task touching an ASSOCIATE | ✅                    | everything       |
+
+Counters arrive as `myXxx` / `teamXxx` / `allXxx` sets of `Open`, `InProgress`,
+`Quality`, `Submitted` and `Total`, plus `statusBucket` / `priorityBucket`
+breakdowns (label = enum name, rendered through `App.statusLabel`). The
+dashboard prints the `tile-my-*` / `tile-all-*` tiles Open, In Progress, Quality
+and Total; `/client-detail.html` adds Quality **and** Submitted tiles from
+`ClientProfileDto.TaskStats`.
 
 Client accounts are never the assignee, so their `myXxx` counters — and the
 `/api/tasks/my-open` list beneath the tiles — key on `task.client` instead of
@@ -371,8 +425,20 @@ curl -b cookies.txt -X POST http://localhost:8080/api/task \
 ### Status transitions
 
 `TaskStatus.canTransitionTo` guards the lifecycle, so `PATCH /api/task/{id}/status`
-answers `400` for an illegal jump such as `OPEN → COMPLETED`. Move through
-`IN_PROGRESS` instead. Re-opening a `CLOSED` task is allowed.
+answers `400` for an illegal jump such as `OPEN → QUALITY` — reach it through
+`IN_PROGRESS` first (`IN_PROGRESS → QUALITY → SUBMITTED` are the forward moves).
+Re-opening a `CLOSED` task is allowed by the domain and is restricted to
+MANAGER / ADMIN by `TaskService`.
+
+The review flow moves the status on its own as well: posting an associate
+submission sets `QUALITY`, and answering one — or any COORDINATOR / MANAGER /
+ADMIN reply while the task sits in `QUALITY` — sets `SUBMITTED`. Those two paths
+deliberately bypass `canTransitionTo`, never touch a `CLOSED` task, and call
+`task.touch()` so "last activity" stays truthful.
+
+Every one of these moves goes through `Task.changeStatus`, which also stamps
+`status_changed_at` — the moment from which that task stops appearing in
+anybody's bell (see *Frontend notes*).
 
 ---
 
@@ -438,6 +504,10 @@ answers `400` for an illegal jump such as `OPEN → COMPLETED`. Move through
   lives in `localStorage` (`admin++-notif-read`) keyed by stable ids
   (`assigned-7`, `message-42`, `escalation-43`), so nothing about read state is
   stored server side. Clicking an item marks it read and opens the task.
+  The feed is recomputed on every read, and moving a task's status wipes
+  everything reported about it before that instant — assignment, thread message
+  or escalation, whoever was told — so those items simply stop being returned;
+  anything that happens afterwards is news again.
 * The footer on every authenticated page reads
   `Admin++ | Logged in as <name> (<role>)`, filled from the same
   `data-auth-footer-user` span by `Auth.renderHeader()`.

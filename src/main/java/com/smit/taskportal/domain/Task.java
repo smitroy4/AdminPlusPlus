@@ -115,10 +115,34 @@ public class Task {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    /**
+     * When the current assignee took ownership. It is the event time of the
+     * "assigned" notification, so that entry keeps its date while the task
+     * moves on (unlike {@link #updatedAt}, which every reply bumps).
+     */
+    @Column(name = "assigned_at")
+    private Instant assignedAt;
+
+    /**
+     * When the status last changed. The bell drops everything it reported about
+     * this task before this instant — see {@code NotificationService}.
+     */
+    @Column(name = "status_changed_at")
+    private Instant statusChangedAt;
+
     /** Adds a comment and keeps both sides of the association in sync. */
     public void addMessage(TaskMessage message) {
         messages.add(message);
         message.setTask(this);
+    }
+
+    /**
+     * Moves the task along its life-cycle and stamps the moment, which is what
+     * makes the outstanding notifications about this task disappear.
+     */
+    public void changeStatus(TaskStatus target) {
+        this.status = target;
+        this.statusChangedAt = Instant.now();
     }
 
     /** True once a client has escalated this task to a manager. */

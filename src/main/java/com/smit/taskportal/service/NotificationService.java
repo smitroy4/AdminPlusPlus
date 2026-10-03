@@ -28,6 +28,11 @@ import java.util.List;
  *       and admins, only your own for clients.</li>
  * </ul>
  *
+ * <p>Every entry is dropped again as soon as the task's status moves on: the
+ * moment of the move is stamped on the task ({@code statusChangedAt}) and
+ * anything reported about it before that instant disappears for everybody —
+ * whatever the type, whatever the recipient.
+ *
  * <p>Read state is deliberately not stored server side — the browser keeps the
  * set of read ids in localStorage and derives the badge from it. Messages the
  * caller wrote themself are never events about them and are dropped.
@@ -58,6 +63,10 @@ public class NotificationService {
         List<NotificationDto> items = new ArrayList<>();
 
         for (Task task : taskRepository.findRecentTasksAssignedTo(actor.id(), since)) {
+            Instant assignedAt = task.getAssignedAt() != null ? task.getAssignedAt() : task.getCreatedAt();
+            if (clearedByStatusChange(task, assignedAt)) {
+                continue;
+            }
             items.add(new NotificationDto(
                     "assigned-" + task.getId(),
                     "ASSIGNED",
@@ -86,6 +95,9 @@ public class NotificationService {
         }
         for (TaskMessage message : taskMessageRepository.findRecentEscalations(since)) {
             Task task = message.getTask();
+            if (clearedByStatusChange(task, message.getCreatedAt())) {
+                continue;
+            }
             if (actor.isClient()) {
                 if (task.getEscalatedBy() == null || !actor.id().equals(task.getEscalatedBy().getId())) {
                     continue;
@@ -110,12 +122,24 @@ public class NotificationService {
             messages = taskMessageRepository.findRecentStaffMessages(actor.id(), since);
         }
         for (TaskMessage message : messages) {
+            if (clearedByStatusChange(message.getTask(), message.getCreatedAt())) {
+                continue;
+            }
             if (isOwnMessage(message, actor)) {
                 continue;
             }
             items.add(messageItem("message-", "MESSAGE", message,
                     "New message in the conversation"));
         }
+    }
+
+    /**
+     * A status move wipes the slate for that task: everything reported before
+     * it — assigned, message or escalation, for whoever was told — is gone.
+     */
+    private static boolean clearedByStatusChange(Task task, Instant eventTime) {
+        Instant statusChangedAt = task.getStatusChangedAt();
+        return statusChangedAt != null && eventTime != null && !eventTime.isAfter(statusChangedAt);
     }
 
     private static boolean isOwnMessage(TaskMessage message, AppUserPrincipal actor) {

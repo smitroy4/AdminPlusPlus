@@ -31,6 +31,9 @@ async function loadTask(taskId, user) {
     state.currentUserId = user.id;
     state.canManage = Auth.isManagerOrAbove();
     state.isClient = Auth.isClient();
+    state.isAdmin = Auth.isAdmin();
+    state.userRole = user.role;
+    state.taskId = taskId;
     try {
         const response = await App.getJson('/api/task/' + encodeURIComponent(taskId));
         state.task = response.data.task;
@@ -43,6 +46,7 @@ async function loadTask(taskId, user) {
         renderThread(state.messages);
         renderMessageCount(state.task.id, state.messages.length);
         renderEscalation();
+        await loadSubmissions(taskId);
         return state;
     } catch (error) {
         const node = App.$('#detail-error');
@@ -94,7 +98,7 @@ function renderHeader(task) {
 
     const stateSelect = App.$('#status-select');
     if (stateSelect) {
-        ['OPEN', 'IN_PROGRESS', 'COMPLETED', 'CLOSED'].forEach((value) => {
+        ['OPEN', 'IN_PROGRESS', 'QUALITY', 'SUBMITTED', 'CLOSED'].forEach((value) => {
             const option = document.createElement('option');
             option.value = value;
             option.textContent = App.statusLabel(value);
@@ -217,7 +221,8 @@ function renderEscalationThread(messages) {
 
 function renderEscalationMessage(message) {
     const mine = message.fromUser && message.fromUser.id === state.currentUserId;
-    const canDelete = mine || state.canManage;
+    /* Deleting is an admin power, and only ever an admin power. */
+    const canDelete = state.isAdmin;
 
     return '<div class="msg ' + (mine ? 'msg--mine' : 'msg--other') + ' msg--escalation">'
         + '<div class="msg__head">'
@@ -277,7 +282,8 @@ function renderMessage(message, skip) {
         return '';
     }
     const mine = message.fromUser && message.fromUser.id === state.currentUserId;
-    const canDelete = mine || state.canManage;
+    /* Deleting is an admin power — the server refuses everybody else. */
+    const canDelete = state.isAdmin;
 
     return '<div class="msg ' + (mine ? 'msg--mine' : 'msg--other')
         + (message.internal ? ' msg--internal' : '') + '">'
@@ -443,9 +449,22 @@ function wireComposer(detail, user) {
         const escalateToggle = App.$('#message-escalate');
         const internal = !!(internalToggle && internalToggle.checked);
         const escalate = !!(escalateToggle && escalateToggle.checked);
+        /* Associates never talk in the thread: their update becomes a submission. */
+        const isAssociate = state.userRole === 'ASSOCIATE';
 
-        App.busy(submit, true, escalate ? 'Escalating…' : 'Posting…');
+        App.busy(submit, true,
+            escalate ? 'Escalating…' : (isAssociate ? 'Submitting…' : 'Posting…'));
         try {
+            if (isAssociate) {
+                await App.postJson('/api/task/' + detail.task.id + '/associate-submission',
+                    { content: body });
+                textarea.value = '';
+                await loadSubmissions(detail.task.id);
+                await refreshStatus(detail);
+                App.toast('Update submitted for review', 'success');
+                return;
+            }
+
             const response = escalate
                 ? await App.postJson('/api/task/' + detail.task.id + '/escalate', { messageBody: body })
                 : await App.postJson('/api/task/' + detail.task.id + '/message',
@@ -464,6 +483,8 @@ function wireComposer(detail, user) {
                 state.messages.push(response.data);
                 renderThread(state.messages);
                 renderMessageCount(detail.task.id, state.messages.length);
+                /* A reviewer's reply may have advanced the workflow (Quality → Submitted). */
+                await refreshStatus(detail);
             }
             App.toast(escalate ? 'Escalated to a manager' : 'Message posted', 'success');
         } catch (error) {
@@ -546,4 +567,90 @@ function wireEscalation() {
             App.toast(error.message, 'error');
         }
     });
+}
+
+/* ----------------------------------------------------------- submissions */
+
+/**
+ * The accordions in their own "Submitted for Quality Approval" section, below
+ * the composer. Every internal role reads exactly the same list — newest on
+ * top, nothing ever pruned — so the review workflow looks the same for
+ * associates, coordinators, managers and admins alike. Client accounts never
+ * see internal review traffic, so their section stays hidden.
+ */
+async function loadSubmissions(taskId) {
+    const section = App.$('#submissions-section');
+    const container = App.$('#submissions-list');
+    if (!section || !container) {
+        return;
+    }
+    if (state.isClient) {
+        container.innerHTML = '';
+        Auth.hide(section);
+        return;
+    }
+    try {
+        const response = await App.getJson('/api/task/' + encodeURIComponent(taskId) + '/associate-submissions');
+        const submissions = response.data || [];
+        container.innerHTML = submissions.length
+            ? submissions.map((sub) => renderSubmissionAccordion(sub)).join('')
+            : App.emptyState('Nothing waiting for quality approval',
+                'Updates posted by an associate from the composer above land here.');
+        Auth.show(section);
+        container.querySelectorAll('[data-accordion-toggle]').forEach((head) => {
+            head.addEventListener('click', () => toggleSubmissionAccordion(head));
+        });
+    } catch (error) {
+        container.innerHTML = '';
+        Auth.hide(section);
+    }
+}
+
+/** Opens / closes one accordion; the others keep whatever state they were in. */
+function toggleSubmissionAccordion(head) {
+    const body = head.nextElementSibling;
+    if (!body) {
+        return;
+    }
+    const wasOpen = body.style.display !== 'none';
+    body.style.display = wasOpen ? 'none' : 'block';
+    const caret = head.querySelector('[data-accordion-caret]');
+    if (caret) {
+        caret.textContent = wasOpen ? '\u25B8' : '\u25BE';
+    }
+}
+
+function renderSubmissionAccordion(sub) {
+    const employeeName = sub.employee ? (sub.employee.displayName || sub.employee.username) : 'Employee';
+    const time = sub.createdAt ? App.formatRelative(sub.createdAt) : '';
+    const title = 'Submitted by ' + App.esc(employeeName) + ' | ' + App.esc(time);
+    return '<div class="card" style="margin-bottom:12px">'
+        + '<div class="card__head" style="cursor:pointer" data-accordion-toggle>'
+        + '<h4 style="margin:0">' + title
+        + '<span class="muted" style="margin-left:8px" data-accordion-caret>&#9656;</span></h4>'
+        + '</div>'
+        + '<div class="card__body" style="display:none">'
+        + '<div style="white-space:pre-wrap">' + App.escMultiline(sub.content) + '</div>'
+        + '</div>'
+        + '</div>';
+}
+
+/**
+ * Re-reads the task after a post: the backend moves the workflow on by itself
+ * (Quality after an associate's update, Submitted after a reviewer's reply), so
+ * the badge and the status selector are re-synced from the server.
+ */
+async function refreshStatus(detail) {
+    try {
+        const response = await App.getJson('/api/task/' + encodeURIComponent(detail.task.id));
+        state.task = response.data.task;
+        detail.task = response.data.task;
+        App.$('#detail-status-badge').innerHTML = App.statusBadge(state.task.status);
+        const select = App.$('#status-select');
+        if (select) {
+            select.value = state.task.status;
+        }
+    } catch (error) {
+        /* Nothing to resync - the header simply keeps showing what it had. */
+    }
 }

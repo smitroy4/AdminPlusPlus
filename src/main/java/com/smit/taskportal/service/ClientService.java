@@ -91,7 +91,8 @@ public class ClientService {
                 visible.size(),
                 count(visible, TaskStatus.OPEN),
                 count(visible, TaskStatus.IN_PROGRESS),
-                count(visible, TaskStatus.COMPLETED),
+                count(visible, TaskStatus.QUALITY),
+                count(visible, TaskStatus.SUBMITTED),
                 count(visible, TaskStatus.CLOSED));
 
         List<TaskDto> recent = visible.stream()

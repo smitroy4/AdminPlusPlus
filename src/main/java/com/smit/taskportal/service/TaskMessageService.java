@@ -4,6 +4,7 @@ import com.smit.taskportal.api.dto.TaskMessageDto;
 import com.smit.taskportal.domain.Task;
 import com.smit.taskportal.domain.TaskMessage;
 import com.smit.taskportal.domain.TaskPriority;
+import com.smit.taskportal.domain.TaskStatus;
 import com.smit.taskportal.domain.User;
 import com.smit.taskportal.exception.BadRequestException;
 import com.smit.taskportal.exception.ForbiddenException;
@@ -143,10 +144,22 @@ public class TaskMessageService {
      * Adds one entry to the shared thread. Client accounts use this too — their
      * private channel is {@link #escalate}, reached from the same composer by
      * ticking "Escalate to Manager".
+     *
+     * <p>Associates never write straight into the conversation: their update is
+     * captured as an associate submission for the reviewers instead (see
+     * {@code AssociateSubmissionService#createSubmission}), so this endpoint
+     * refuses them.
+     *
+     * <p>Workflow: when a coordinator/manager/admin replies to a task that is
+     * waiting in QUALITY, the task is automatically moved on to SUBMITTED.
      */
     @Transactional
     public TaskMessageDto addMessage(Long taskId, String body, boolean internal) {
         AppUserPrincipal actor = currentUser.require();
+        if (actor.isAssociate()) {
+            throw new ForbiddenException(
+                    "Associates submit updates for review; post it as a submission instead of a conversation message");
+        }
         Task task = taskService.getVisibleTask(taskId);
 
         if (internal && !actor.isManagerOrAbove()) {
@@ -163,11 +176,18 @@ public class TaskMessageService {
                 .build();
         task.addMessage(message);
         task.touch();
+        TaskMessage saved = taskMessageRepository.save(message);
 
-        return TaskMessageDto.from(taskMessageRepository.save(message));
+        if (actor.role().isCoordinatorOrAbove() && task.getStatus() == TaskStatus.QUALITY) {
+            /* Stamp after the reply is written, so a status move clears
+               everything reported about this task — including its own. */
+            task.changeStatus(TaskStatus.SUBMITTED);
+        }
+
+        return TaskMessageDto.from(saved);
     }
 
-    /** Authors can retract their own comment; admins can remove anything. */
+    /** Only ADMIN can delete messages. */
     @Transactional
     public void deleteMessage(Long taskId, Long messageId) {
         AppUserPrincipal actor = currentUser.require();
@@ -176,9 +196,8 @@ public class TaskMessageService {
         TaskMessage message = taskMessageRepository.findByIdAndTaskId(messageId, taskId)
                 .orElseThrow(() -> ResourceNotFoundException.of("Message", messageId));
 
-        boolean isAuthor = message.getFromUser() != null && message.getFromUser().getId().equals(actor.id());
-        if (!isAuthor && !actor.isManagerOrAbove()) {
-            throw new ForbiddenException("You can only delete your own messages");
+        if (!actor.isAdmin()) {
+            throw new ForbiddenException("Only administrators can delete messages");
         }
 
         taskMessageRepository.delete(message);

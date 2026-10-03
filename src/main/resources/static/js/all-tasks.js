@@ -5,7 +5,7 @@
 'use strict';
 
 const PRIORITY_ORDER = { URGENT: 2, NORMAL: 1 };
-const STATUS_ORDER = { OPEN: 4, IN_PROGRESS: 3, COMPLETED: 2, CLOSED: 1 };
+const STATUS_ORDER = { OPEN: 5, IN_PROGRESS: 4, QUALITY: 3, SUBMITTED: 2, CLOSED: 1 };
 
 const filters = { text: '', client: '', agent: '', status: '' };
 

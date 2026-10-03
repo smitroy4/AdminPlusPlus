@@ -17,6 +17,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -199,7 +200,7 @@ class TaskportalApplicationTests {
                     .isNotEqualTo(globexTask);
             assertThat(task.get("status").asText())
                     .as("finished work is not 'open'")
-                    .isNotIn("COMPLETED", "CLOSED");
+                    .isNotEqualTo("CLOSED");
         }
     }
 
@@ -308,26 +309,222 @@ class TaskportalApplicationTests {
                 .andExpect(status().isForbidden());
     }
 
+    /**
+     * The associate message workflow: an associate never writes into the
+     * conversation. The same words are filed as a submission for the reviewers,
+     * the task parks itself in QUALITY, and every internal role reads the same
+     * accordion list without anything ever being overwritten.
+     */
     @Test
-    void employeeCanCommentOnATaskTheyClaimed() throws Exception {
+    void associateUpdateBecomesASubmissionInsteadOfAConversationMessage() throws Exception {
         MockHttpSession manager = login("manager", "Manager@12345");
         MockHttpSession employee = login("employee", "Employee@12345");
+        MockHttpSession coordinator = login("coordinator", "Coordinator@12345");
+        MockHttpSession client = login("client", "Client@12345");
 
         long taskId = createTaskForEmployee(manager, employee);
 
+        // Straight into the thread: refused.
         mockMvc.perform(post("/api/task/" + taskId + "/message")
                         .session(employee)
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"messageBody":"First reply from the test suite","internal":false}"""))
+                .andExpect(status().isForbidden());
+
+        // The same words as a submission: accepted, with the author attached.
+        mockMvc.perform(post("/api/task/" + taskId + "/associate-submission")
+                        .session(employee)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"First reply from the test suite\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status").value("PENDING"))
+                .andExpect(jsonPath("$.data.employee.username").value("employee"));
+
+        // The thread keeps only the seeded description, and the task waits for review.
+        mockMvc.perform(get("/api/task/" + taskId).session(coordinator))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.task.status").value("QUALITY"))
+                .andExpect(jsonPath("$.data.messages.length()").value(1));
+
+        // Only associates file submissions.
+        mockMvc.perform(post("/api/task/" + taskId + "/associate-submission")
+                        .session(coordinator)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"Not how reviewers contribute\"}"))
+                .andExpect(status().isForbidden());
+
+        // A second update stacks on top of the first rather than replacing it.
+        mockMvc.perform(post("/api/task/" + taskId + "/associate-submission")
+                        .session(employee)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"content\":\"Second update from the associate\"}"))
                 .andExpect(status().isCreated());
+
+        for (String[] account : new String[][]{
+                {"coordinator", "Coordinator@12345"},
+                {"employee", "Employee@12345"}}) {
+            MockHttpSession session = login(account[0], account[1]);
+            JsonNode submissions = dataOf(mockMvc.perform(
+                            get("/api/task/" + taskId + "/associate-submissions").session(session))
+                    .andExpect(status().isOk())
+                    .andReturn());
+            assertThat(submissions.size())
+                    .as("%s sees both submissions", account[0])
+                    .isEqualTo(2);
+            assertThat(List.of(submissions.get(0).get("content").asText(),
+                            submissions.get(1).get("content").asText()))
+                    .containsExactlyInAnyOrder("First reply from the test suite",
+                            "Second update from the associate");
+        }
+
+        // A client cannot even open this task, let alone its review traffic.
+        mockMvc.perform(get("/api/task/" + taskId + "/associate-submissions").session(client))
+                .andExpect(status().isForbidden());
+
+        // On a task of its own customer the endpoint answers — with nothing to show.
+        long acmeId = idByName(dataOf(mockMvc.perform(get("/api/clients").session(manager))
+                .andExpect(status().isOk())
+                .andReturn()), "Acme Corporation");
+        long acmeTask = createTask(manager, """
+                {"title":"Acme submission privacy probe","priority":"NORMAL","clientId":%d}"""
+                .formatted(acmeId));
+        mockMvc.perform(post("/api/task/" + acmeTask + "/associate-submission")
+                        .session(employee)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"Only the internal team reads this\"}"))
+                .andExpect(status().isCreated());
+
+        JsonNode forClient = dataOf(mockMvc.perform(
+                        get("/api/task/" + acmeTask + "/associate-submissions").session(client))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(forClient.size()).isZero();
+    }
+
+    /**
+     * The backend drives the life-cycle: an associate's update parks the task in
+     * QUALITY, and whatever a coordinator/manager/admin sends next moves it on
+     * to SUBMITTED — both without anybody touching the status selector.
+     */
+    @Test
+    void submissionReviewDrivesQualityAndSubmittedStatus() throws Exception {
+        MockHttpSession manager = login("manager", "Manager@12345");
+        MockHttpSession employee = login("employee", "Employee@12345");
+        MockHttpSession coordinator = login("coordinator", "Coordinator@12345");
+
+        long taskId = createTaskForEmployee(manager, employee);
+
+        long submissionId = idOf(mockMvc.perform(post("/api/task/" + taskId + "/associate-submission")
+                        .session(employee)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"Build is ready for review\"}"))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString());
+        assertThat(statusOf(manager, taskId)).isEqualTo("QUALITY");
+
+        // Associates may not review their own (or anybody else's) submission.
+        mockMvc.perform(post("/api/task/" + taskId + "/associate-submission/" + submissionId + "/review")
+                        .session(employee)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"response\":\"self review\"}"))
+                .andExpect(status().isForbidden());
+
+        // The coordinator answers: the reply lands in the thread, the task moves on.
+        mockMvc.perform(post("/api/task/" + taskId + "/associate-submission/" + submissionId + "/review")
+                        .session(coordinator)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"response\":\"Reviewed - looks good\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.messageBody").value("Reviewed - looks good"));
+        assertThat(statusOf(manager, taskId)).isEqualTo("SUBMITTED");
+        JsonNode afterReview = dataOf(mockMvc.perform(get("/api/task/" + taskId).session(manager))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(afterReview.get("messages").size())
+                .as("seeded description + the reviewer's reply: %s", afterReview.get("messages"))
+                .isEqualTo(2);
+
+        // The same holds for a plain composer reply while the task waits in Quality.
+        mockMvc.perform(post("/api/task/" + taskId + "/associate-submission")
+                        .session(employee)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"Second round of changes\"}"))
+                .andExpect(status().isCreated());
+        assertThat(statusOf(manager, taskId)).isEqualTo("QUALITY");
+
+        mockMvc.perform(post("/api/task/" + taskId + "/message")
+                        .session(coordinator)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"messageBody\":\"Back to you for the final check\"}"))
+                .andExpect(status().isCreated());
+        assertThat(statusOf(manager, taskId)).isEqualTo("SUBMITTED");
+    }
+
+    /** Deleting a conversation message is an admin power and nothing else. */
+    @Test
+    void onlyAdminsCanDeleteMessages() throws Exception {
+        MockHttpSession manager = login("manager", "Manager@12345");
+        MockHttpSession coordinator = login("coordinator", "Coordinator@12345");
+        MockHttpSession employee = login("employee", "Employee@12345");
+        MockHttpSession client = login("client", "Client@12345");
+        MockHttpSession admin = login("admin", "Admin@12345");
+
+        long acmeTask = taskIdByTitle(manager, "Prepare quarterly security review for Acme");
+        long messageId = messageIdOf(manager, acmeTask);
+
+        for (MockHttpSession session : List.of(manager, coordinator, employee, client)) {
+            mockMvc.perform(delete("/api/task/" + acmeTask + "/message/" + messageId)
+                            .session(session)
+                            .with(csrf()))
+                    .andExpect(status().isForbidden());
+        }
+
+        mockMvc.perform(delete("/api/task/" + acmeTask + "/message/" + messageId)
+                        .session(admin)
+                        .with(csrf()))
+                .andExpect(status().isOk());
+    }
+
+    /**
+     * Every internal role may open every task, even one it neither created nor
+     * is assigned to. Client accounts stay scoped to their own customer.
+     */
+    @Test
+    void everyInternalRoleCanOpenAnyTaskDetail() throws Exception {
+        MockHttpSession manager = login("manager", "Manager@12345");
+        MockHttpSession employee = login("employee", "Employee@12345");
+        MockHttpSession coordinator = login("coordinator", "Coordinator@12345");
+        MockHttpSession client = login("client", "Client@12345");
+
+        long taskId = createTask(manager, """
+                {"title":"Task nobody on the team owns yet",
+                 "description":"Raised by the manager for the whole team",
+                 "priority":"NORMAL"}""");
 
         mockMvc.perform(get("/api/task/" + taskId).session(employee))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.task.title").value("Automated smoke test task"))
-                .andExpect(jsonPath("$.data.task.taskNo").exists())
-                .andExpect(jsonPath("$.data.messages.length()").value(2));
+                .andExpect(jsonPath("$.data.task.title").value("Task nobody on the team owns yet"));
+
+        mockMvc.perform(get("/api/task/" + taskId).session(coordinator))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/task/" + taskId).session(manager))
+                .andExpect(status().isOk());
+
+        // A task with no client at all is out of reach for a client account.
+        mockMvc.perform(get("/api/task/" + taskId).session(client))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -405,12 +602,13 @@ class TaskportalApplicationTests {
     @Test
     void messageWithoutTheInternalFlagIsAccepted() throws Exception {
         MockHttpSession manager = login("manager", "Manager@12345");
-        MockHttpSession employee = login("employee", "Employee@12345");
+        MockHttpSession coordinator = login("coordinator", "Coordinator@12345");
 
-        long taskId = createTaskForEmployee(manager, employee);
+        long taskId = createTask(manager, """
+                {"title":"Optional internal flag probe","priority":"NORMAL"}""");
 
         mockMvc.perform(post("/api/task/" + taskId + "/message")
-                        .session(employee)
+                        .session(coordinator)
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -656,9 +854,27 @@ class TaskportalApplicationTests {
 
     private String updatedAtOf(MockHttpSession session, long taskId) throws Exception {
         return dataOf(mockMvc.perform(get("/api/task/" + taskId).session(session))
-                        .andExpect(status().isOk())
-                        .andReturn())
+                .andExpect(status().isOk())
+                .andReturn())
                 .get("task").get("updatedAt").asText();
+    }
+
+    /** The task's status as the workflow left it. */
+    private String statusOf(MockHttpSession session, long taskId) throws Exception {
+        return dataOf(mockMvc.perform(get("/api/task/" + taskId).session(session))
+                .andExpect(status().isOk())
+                .andReturn())
+                .get("task").get("status").asText();
+    }
+
+    /** The id of the oldest message in the thread (the seeded description). */
+    private long messageIdOf(MockHttpSession session, long taskId) throws Exception {
+        JsonNode messages = dataOf(mockMvc.perform(get("/api/task/" + taskId).session(session))
+                .andExpect(status().isOk())
+                .andReturn())
+                .get("messages");
+        assertThat(messages.size()).as("a message to delete").isPositive();
+        return messages.get(0).get("id").asLong();
     }
 
     private static long idByName(JsonNode list, String name) {
@@ -726,6 +942,7 @@ class TaskportalApplicationTests {
         MockHttpSession manager = login("manager", "Manager@12345");
         MockHttpSession client = login("client", "Client@12345");
         MockHttpSession associate = login("employee", "Employee@12345");
+        MockHttpSession coordinator = login("coordinator", "Coordinator@12345");
 
         // A fresh Acme task the associate is assigned to, so every party may read it.
         JsonNode clients = dataOf(mockMvc.perform(get("/api/clients").session(manager))
@@ -754,7 +971,7 @@ class TaskportalApplicationTests {
 
         // A regular comment sits in the normal thread first.
         mockMvc.perform(post("/api/task/" + taskId + "/message")
-                        .session(associate)
+                        .session(coordinator)
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"messageBody\":\"Working on it\",\"internal\":false}"))
@@ -884,6 +1101,7 @@ class TaskportalApplicationTests {
     void notificationsAreScopedToTheViewer() throws Exception {
         MockHttpSession manager = login("manager", "Manager@12345");
         MockHttpSession associate = login("employee", "Employee@12345");
+        MockHttpSession coordinator = login("coordinator", "Coordinator@12345");
         MockHttpSession client = login("client", "Client@12345");
 
         long taskId = createTask(manager, """
@@ -900,8 +1118,9 @@ class TaskportalApplicationTests {
                         .content("{\"userId\":" + associateId + "}"))
                 .andExpect(status().isOk());
 
+        // Associates cannot comment at all any more, so a teammate writes the reply.
         mockMvc.perform(post("/api/task/" + taskId + "/message")
-                        .session(associate)
+                        .session(coordinator)
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"messageBody\":\"Started on the notification probe\",\"internal\":false}"))
@@ -919,7 +1138,10 @@ class TaskportalApplicationTests {
                 .as("the assignee hears about the assignment")
                 .isNotNull();
         assertThat(findNotification(associateFeed, "MESSAGE", taskId))
-                .as("the comment was written by the associate themself")
+                .as("the assignee hears about a teammate's comment")
+                .isNotNull();
+        assertThat(findNotification(notifications(coordinator), "MESSAGE", taskId))
+                .as("the comment was written by the coordinator themself")
                 .isNull();
         assertThat(feedSnippetContains(associateFeed, "Opening line that mirrors the thread"))
                 .as("the task description mirrored into the thread is not an event")
@@ -965,6 +1187,72 @@ class TaskportalApplicationTests {
         assertThat(feedSnippetContains(associateAfterEscalation, "Confirming the date with legal"))
                 .as("escalation bodies stay out of the associate feed")
                 .isFalse();
+    }
+
+    @Test
+    void updatingTheStatusClearsEveryNotificationAboutThatTask() throws Exception {
+        MockHttpSession manager = login("manager", "Manager@12345");
+        MockHttpSession associate = login("employee", "Employee@12345");
+        MockHttpSession coordinator = login("coordinator", "Coordinator@12345");
+
+        long taskId = createTask(manager, """
+                {"title":"Status clears the bell",
+                 "description":"Opening line for the clearing probe",
+                 "priority":"NORMAL"}""");
+        long associateId = idOf(mockMvc.perform(get("/api/me").session(associate))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString());
+        mockMvc.perform(post("/api/task/" + taskId + "/assign")
+                        .session(manager)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":" + associateId + "}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/task/" + taskId + "/message")
+                        .session(coordinator)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"messageBody\":\"First look at the clearing probe\",\"internal\":false}"))
+                .andExpect(status().isCreated());
+
+        // Before the move the assignee hears about the job and the comment,
+        // and the creator hears about the comment.
+        assertThat(findNotification(notifications(associate), "ASSIGNED", taskId)).isNotNull();
+        assertThat(findNotification(notifications(associate), "MESSAGE", taskId)).isNotNull();
+        assertThat(findNotification(notifications(manager), "MESSAGE", taskId)).isNotNull();
+
+        mockMvc.perform(patch("/api/task/" + taskId + "/status")
+                        .session(manager)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"IN_PROGRESS\"}"))
+                .andExpect(status().isOk());
+
+        // Once the status moves, none of it is news any more - for anybody.
+        assertThat(findNotification(notifications(associate), "ASSIGNED", taskId))
+                .as("the assignment stops being a notification")
+                .isNull();
+        assertThat(findNotification(notifications(associate), "MESSAGE", taskId))
+                .as("the earlier comment stops being a notification")
+                .isNull();
+        assertThat(findNotification(notifications(manager), "MESSAGE", taskId))
+                .as("the creator's feed is cleared by the same move")
+                .isNull();
+
+        // Activity written after the move is news again.
+        mockMvc.perform(post("/api/task/" + taskId + "/message")
+                        .session(manager)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"messageBody\":\"Written after the move\",\"internal\":false}"))
+                .andExpect(status().isCreated());
+
+        assertThat(findNotification(notifications(associate), "MESSAGE", taskId))
+                .as("a comment written after the move notifies again")
+                .isNotNull();
+        assertThat(findNotification(notifications(associate), "ASSIGNED", taskId))
+                .as("the cleared assignment stays cleared")
+                .isNull();
     }
 
     private JsonNode notifications(MockHttpSession session) throws Exception {

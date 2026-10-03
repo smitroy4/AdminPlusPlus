@@ -56,6 +56,18 @@ public record AppUserPrincipal(Long id,
         return role != null && role.isClient();
     }
 
+    public boolean isCoordinatorOrAbove() {
+        return role != null && role.isCoordinatorOrAbove();
+    }
+
+    public boolean isAssociate() {
+        return role != null && role == com.smit.taskportal.domain.Role.ASSOCIATE;
+    }
+
+    public boolean isAdmin() {
+        return role != null && role == com.smit.taskportal.domain.Role.ADMIN;
+    }
+
     @Override
     public boolean isAccountNonExpired() {
         return true;

@@ -22,6 +22,7 @@ import com.smit.taskportal.security.CurrentUserHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
@@ -31,7 +32,9 @@ import java.util.Map;
 @Transactional(readOnly = true)
 public class TaskService {
 
-    private static final List<TaskStatus> ACTIVE_STATUSES = List.of(TaskStatus.OPEN, TaskStatus.IN_PROGRESS);
+    /** Everything but CLOSED: the backlog views must keep work that is in review or already submitted. */
+    private static final List<TaskStatus> ACTIVE_STATUSES = List.of(TaskStatus.OPEN, TaskStatus.IN_PROGRESS,
+            TaskStatus.QUALITY, TaskStatus.SUBMITTED);
     private static final List<TaskStatus> ALL_STATUSES = List.of(TaskStatus.values());
     private static final List<TaskPriority> ALL_PRIORITIES = List.of(TaskPriority.values());
 
@@ -67,9 +70,9 @@ public class TaskService {
     /**
      * Loads a task and asserts the caller may see it.
      *
-     * <p>Visibility rule: managers and admins see everything; client accounts
-     * see only the tasks belonging to their own customer; everybody else sees
-     * only the tasks they created or are assigned to.
+     * <p>Visibility rule: every internal account (associate, coordinator,
+     * manager, admin) may see every task; client accounts see only the tasks
+     * belonging to their own customer.
      */
     public Task getVisibleTask(Long taskId) {
         Task task = getTaskEntity(taskId);
@@ -177,6 +180,7 @@ public class TaskService {
         } else {
             if (request.assignedToId() != null) {
                 task.setAssignedTo(getUser(request.assignedToId()));
+                task.setAssignedAt(Instant.now());
             }
             if (request.clientId() != null) {
                 task.setClient(clientRepository.findById(request.clientId())
@@ -272,12 +276,13 @@ public class TaskService {
             throw new ForbiddenException("Only a manager or admin can re-open a closed task");
         }
 
-        task.setStatus(target);
-
         if (target.isFinal() && task.getAssignedTo() == null) {
-            // Auto-close the loop by assigning the finishing owner.
+            // Auto-close the loop by assigning the finishing owner. Stamped
+            // before the move so the closure does not announce itself as news.
             task.setAssignedTo(getUser(actor.id()));
+            task.setAssignedAt(Instant.now());
         }
+        task.changeStatus(target);
 
         return TaskDto.from(taskRepository.save(task));
     }
@@ -314,6 +319,7 @@ public class TaskService {
         }
 
         task.setAssignedTo(getUser(assigneeId));
+        task.setAssignedAt(assigneeId == null ? null : Instant.now());
         return TaskDto.from(taskRepository.save(task));
     }
 
@@ -326,6 +332,7 @@ public class TaskService {
         }
         Task task = getTaskEntity(taskId);
         task.setAssignedTo(null);
+        task.setAssignedAt(null);
         return TaskDto.from(taskRepository.save(task));
     }
 
@@ -340,40 +347,47 @@ public class TaskService {
            never assignees and therefore count their own customer's tasks. */
         long myOpen;
         long myInProgress;
-        long myCompleted;
+        long myQuality;
+        long mySubmitted;
         long myTotal;
         if (isClientWithCustomer(actor)) {
             Long clientId = actor.clientId();
             myOpen = taskRepository.countByClientIdAndStatusIn(clientId, List.of(TaskStatus.OPEN));
             myInProgress = taskRepository.countByClientIdAndStatusIn(clientId, List.of(TaskStatus.IN_PROGRESS));
-            myCompleted = taskRepository.countByClientIdAndStatusIn(clientId, List.of(TaskStatus.COMPLETED));
+            myQuality = taskRepository.countByClientIdAndStatusIn(clientId, List.of(TaskStatus.QUALITY));
+            mySubmitted = taskRepository.countByClientIdAndStatusIn(clientId, List.of(TaskStatus.SUBMITTED));
             myTotal = taskRepository.countByClientId(clientId);
         } else {
             myOpen = taskRepository.countByAssignedToIdAndStatusIn(actor.id(), List.of(TaskStatus.OPEN));
             myInProgress = taskRepository.countByAssignedToIdAndStatusIn(actor.id(), List.of(TaskStatus.IN_PROGRESS));
-            myCompleted = taskRepository.countByAssignedToIdAndStatusIn(actor.id(), List.of(TaskStatus.COMPLETED));
+            myQuality = taskRepository.countByAssignedToIdAndStatusIn(actor.id(), List.of(TaskStatus.QUALITY));
+            mySubmitted = taskRepository.countByAssignedToIdAndStatusIn(actor.id(), List.of(TaskStatus.SUBMITTED));
             myTotal = taskRepository.countByAssignedToId(actor.id());
         }
 
         long teamOpen = 0;
         long teamInProgress = 0;
-        long teamCompleted = 0;
+        long teamQuality = 0;
+        long teamSubmitted = 0;
         long teamTotal = 0;
         if (canViewTeam) {
             teamOpen = taskRepository.countByRoleAndStatus(Role.ASSOCIATE, TaskStatus.OPEN);
             teamInProgress = taskRepository.countByRoleAndStatus(Role.ASSOCIATE, TaskStatus.IN_PROGRESS);
-            teamCompleted = taskRepository.countByRoleAndStatus(Role.ASSOCIATE, TaskStatus.COMPLETED);
+            teamQuality = taskRepository.countByRoleAndStatus(Role.ASSOCIATE, TaskStatus.QUALITY);
+            teamSubmitted = taskRepository.countByRoleAndStatus(Role.ASSOCIATE, TaskStatus.SUBMITTED);
             teamTotal = taskRepository.countByRole(Role.ASSOCIATE);
         }
 
         long allOpen = 0;
         long allInProgress = 0;
-        long allCompleted = 0;
+        long allQuality = 0;
+        long allSubmitted = 0;
         long allTotal = 0;
         if (canViewAll) {
             allOpen = taskRepository.countByStatus(TaskStatus.OPEN);
             allInProgress = taskRepository.countByStatus(TaskStatus.IN_PROGRESS);
-            allCompleted = taskRepository.countByStatus(TaskStatus.COMPLETED);
+            allQuality = taskRepository.countByStatus(TaskStatus.QUALITY);
+            allSubmitted = taskRepository.countByStatus(TaskStatus.SUBMITTED);
             allTotal = taskRepository.count();
         }
 
@@ -418,9 +432,9 @@ public class TaskService {
             }
         }
 
-        return new DashboardStatsDto(myOpen, myInProgress, myCompleted, myTotal,
-                teamOpen, teamInProgress, teamCompleted, teamTotal,
-                allOpen, allInProgress, allCompleted, allTotal,
+        return new DashboardStatsDto(myOpen, myInProgress, myQuality, mySubmitted, myTotal,
+                teamOpen, teamInProgress, teamQuality, teamSubmitted, teamTotal,
+                allOpen, allInProgress, allQuality, allSubmitted, allTotal,
                 canViewTeam, canViewAll, byStatus, byPriority);
     }
 
@@ -430,13 +444,8 @@ public class TaskService {
         if (actor.isClient()) {
             return task.getClient() != null && task.getClient().getId().equals(actor.clientId());
         }
-        if (actor.isManagerOrAbove()) {
-            return true;
-        }
-        if (task.getCreatedBy() != null && task.getCreatedBy().getId().equals(actor.id())) {
-            return true;
-        }
-        return task.getAssignedTo() != null && task.getAssignedTo().getId().equals(actor.id());
+        // Every internal role — associate, coordinator, manager, admin — may open any task.
+        return true;
     }
 
     /** {@code true} for a CLIENT account that is actually linked to a customer. */

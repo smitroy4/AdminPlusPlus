@@ -93,7 +93,8 @@ function renderStats(stats) {
     }
     setText('#stat-open', String(stats.open));
     setText('#stat-in-progress', String(stats.inProgress));
-    setText('#stat-completed', String(stats.completed));
+    setText('#stat-quality', String(stats.quality));
+    setText('#stat-submitted', String(stats.submitted));
     setText('#stat-total', String(stats.total));
 }
 

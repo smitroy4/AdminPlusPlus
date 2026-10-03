@@ -18,7 +18,8 @@ public record ClientProfileDto(ClientDto client,
     public record TaskStats(long total,
                             long open,
                             long inProgress,
-                            long completed,
+                            long quality,
+                            long submitted,
                             long closed) {
     }
 }
