@@ -63,6 +63,7 @@ function renderHeader(task) {
 
     App.$('#detail-taskno').textContent = task.taskNo;
     App.$('#detail-title').textContent = task.title;
+    renderDescription(task);
     App.$('#detail-status-badge').innerHTML = App.statusBadge(task.status);
     App.$('#detail-priority-badge').innerHTML = App.priorityBadge(task.priority);
 
@@ -242,25 +243,33 @@ function renderThread(messages) {
         return;
     }
 
+    /* The description already sits under the title, so the message that seeded
+       the thread with it is dropped rather than printed twice. */
     const first = messages[0];
-    const description = state.task.description;
-    const showDescriptionCard = !!description && messages.length > 0
-        && first.messageBody === description && !first.internal;
+    const isSeededDescription = !!state.task.description
+        && first.messageBody === state.task.description && !first.internal;
 
-    host.innerHTML = (showDescriptionCard ? renderDescriptionCard() : '')
-        + messages.map((message, index) => renderMessage(message, index === 0 && showDescriptionCard)).join('');
+    host.innerHTML = messages.map((message, index) =>
+        renderMessage(message, index === 0 && isSeededDescription)).join('');
 
     host.scrollTop = host.scrollHeight;
 }
 
-function renderDescriptionCard() {
-    return '<div class="msg msg--other msg--original">'
-        + '<div class="msg__head"><span class="msg__author">'
-        + App.esc(state.task.createdBy ? state.task.createdBy.username : 'Unknown')
-        + '</span><span>created this task</span><span>'
-        + App.esc(App.formatDate(state.task.createdAt)) + '</span></div>'
-        + '<div class="msg__bubble">' + App.escMultiline(state.task.description) + '</div>'
-        + '</div>';
+/**
+ * The task brief, rendered straight under the title and before the badges.
+ * Multiline descriptions keep their line breaks.
+ */
+function renderDescription(task) {
+    const node = App.$('#detail-description');
+    if (!node) {
+        return;
+    }
+    if (!task.description) {
+        Auth.hide(node);
+        return;
+    }
+    Auth.show(node);
+    node.textContent = task.description;
 }
 
 function renderMessage(message, skip) {

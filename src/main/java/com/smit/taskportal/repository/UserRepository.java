@@ -1,5 +1,6 @@
 package com.smit.taskportal.repository;
 
+import com.smit.taskportal.domain.Role;
 import com.smit.taskportal.domain.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -21,6 +22,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByUsernameOrEmail(@Param("username") String username, @Param("email") String email);
 
     List<User> findAllByOrderByUsernameAsc();
+
+    /** Staff accounts holding one of {@code roles} — the rows of an operational sheet. */
+    List<User> findAllByRoleInOrderByUsernameAsc(Collection<Role> roles);
 
     List<User> findAllByIdIn(Collection<Long> ids);
 

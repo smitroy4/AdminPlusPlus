@@ -3,8 +3,11 @@ package com.smit.taskportal.controller;
 import com.smit.taskportal.api.dto.ApiResponse;
 import com.smit.taskportal.api.dto.DashboardStatsDto;
 import com.smit.taskportal.api.dto.TaskDto;
+import com.smit.taskportal.api.dto.TeamMemberStatusDto;
+import com.smit.taskportal.domain.Role;
 import com.smit.taskportal.domain.TaskStatus;
 import com.smit.taskportal.service.TaskService;
+import com.smit.taskportal.service.TeamService;
 import com.smit.taskportal.service.UserService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,16 +22,28 @@ public class DashboardController {
 
     private final TaskService taskService;
     private final UserService userService;
+    private final TeamService teamService;
 
-    public DashboardController(TaskService taskService, UserService userService) {
+    public DashboardController(TaskService taskService, UserService userService, TeamService teamService) {
         this.taskService = taskService;
         this.userService = userService;
+        this.teamService = teamService;
     }
 
     /** Tile counters + status/priority breakdowns for the current user. */
     @GetMapping("/dashboard/stats")
     public ApiResponse<DashboardStatsDto> stats() {
         return ApiResponse.ok(taskService.getDashboardStats());
+    }
+
+    /**
+     * Operational sheet for one staff role (MANAGER, COORDINATOR or ASSOCIATE):
+     * who is active, on which task, and since when. Which sheets a caller may
+     * read is decided in {@link TeamService} — associates and clients get a 403.
+     */
+    @GetMapping("/dashboard/team")
+    public ApiResponse<List<TeamMemberStatusDto>> teamSheet(@RequestParam Role role) {
+        return ApiResponse.ok(teamService.getSheet(role));
     }
 
     /** Active tasks "mine": assigned to me, or for client accounts of my customer. */

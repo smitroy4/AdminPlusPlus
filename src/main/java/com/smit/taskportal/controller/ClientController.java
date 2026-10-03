@@ -2,6 +2,7 @@ package com.smit.taskportal.controller;
 
 import com.smit.taskportal.api.dto.ApiResponse;
 import com.smit.taskportal.api.dto.ClientDto;
+import com.smit.taskportal.api.dto.ClientProfileDto;
 import com.smit.taskportal.service.ClientService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -11,8 +12,11 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * Client catalogue. The name is public to every authenticated role; the
- * contact block is stripped for anyone below MANAGER (see {@link ClientService}).
+ * Client catalogue and the Client Details page. What a caller receives is
+ * shaped by its role — see {@link ClientService}: the name is public to every
+ * authenticated role, the commercial record goes to managers/admins and to a
+ * customer reading its own entry, and the task numbers behind it are limited to
+ * the tasks that caller could already open.
  */
 @RestController
 @RequestMapping("/api/clients")
@@ -33,5 +37,11 @@ public class ClientController {
     @GetMapping("/{id}")
     public ApiResponse<ClientDto> get(@PathVariable Long id) {
         return ApiResponse.ok(clientService.get(id));
+    }
+
+    /** Client Details: the record plus its task counters and most recent tasks. */
+    @GetMapping("/{id}/profile")
+    public ApiResponse<ClientProfileDto> profile(@PathVariable Long id) {
+        return ApiResponse.ok(clientService.getProfile(id));
     }
 }

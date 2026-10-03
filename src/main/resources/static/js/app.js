@@ -257,6 +257,21 @@ const App = (function () {
         return PRIORITY_LABELS[value] || value || '—';
     }
 
+    /* ------------------------------------------------------------- routing */
+
+    /* Every page of the SPA is a flat .html file, so links carry the id as a
+       query parameter: /client-detail.html?id=3, /task-detail.html?id=12. */
+    const CLIENT_DETAIL_URL = '/client-detail.html?id=';
+    const TASK_DETAIL_URL = '/task-detail.html?id=';
+
+    function clientDetailUrl(clientId) {
+        return CLIENT_DETAIL_URL + encodeURIComponent(clientId);
+    }
+
+    function taskDetailUrl(taskId) {
+        return TASK_DETAIL_URL + encodeURIComponent(taskId);
+    }
+
     /* ------------------------------------------------------------- escaping */
 
     /**
@@ -302,6 +317,13 @@ const App = (function () {
         return '<span class="badge badge--priority-' + safe + '">' + esc(priorityLabel(priority)) + '</span>';
     }
 
+    /** Active / Idle pill of the operational sheets. */
+    function presenceBadge(presence) {
+        const safe = esc(presence || 'IDLE');
+        return '<span class="badge badge--presence-' + safe + '">'
+            + esc(presence === 'ACTIVE' ? 'Active' : 'Idle') + '</span>';
+    }
+
     function userCell(user) {
         if (!user) {
             return '<span class="cell-unassigned">Unassigned</span>';
@@ -310,12 +332,35 @@ const App = (function () {
             + '</span>' + esc(user.username) + '</span>';
     }
 
-    /** The customer a task belongs to; "Internal" when it has none. */
+    /**
+     * The customer a task belongs to. Rendered as a link on every page that shows
+     * a client, so the Client Details route is reachable from anywhere a task is.
+     */
     function clientCell(client) {
         if (!client) {
             return '<span class="cell-unassigned">Internal</span>';
         }
-        return '<span class="cell-client">' + esc(client.name) + '</span>';
+        return '<a class="cell-client client-link" href="' + esc(clientDetailUrl(client.id)) + '">'
+            + esc(client.name) + '</a>';
+    }
+
+    /** A task number that opens the task detail page (operational sheets). */
+    function taskNoLink(task) {
+        if (!task) {
+            return '<span class="cell-unassigned">&mdash;</span>';
+        }
+        return '<a class="cell-taskno task-link" href="' + esc(taskDetailUrl(task.id)) + '">'
+            + esc(task.taskNo) + '</a>';
+    }
+
+    /** "TASK-00540 — Title", the whole of it linking to the task. */
+    function taskRefCell(task) {
+        if (!task) {
+            return '<span class="cell-unassigned">&mdash;</span>';
+        }
+        return '<a class="task-ref" href="' + esc(taskDetailUrl(task.id)) + '">'
+            + '<span class="cell-taskno">' + esc(task.taskNo) + '</span>'
+            + '<span class="task-ref__title">' + esc(task.title) + '</span></a>';
     }
 
     function emptyState(title, subtitle) {
@@ -580,8 +625,13 @@ const App = (function () {
         priorityLabel,
         statusBadge,
         priorityBadge,
+        presenceBadge,
         userCell,
         clientCell,
+        taskNoLink,
+        taskRefCell,
+        clientDetailUrl,
+        taskDetailUrl,
         initials,
         emptyState,
         esc,

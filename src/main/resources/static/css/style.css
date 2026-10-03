@@ -815,6 +815,132 @@ img {
     font-style: italic;
 }
 
+/* ------------------------------------------------------- in-table links */
+
+/* Client names and task numbers are the two ways to walk from any table into
+   a detail page. They read as links but stay quiet until hovered. */
+.client-link,
+.task-link {
+    color: var(--accent);
+    text-decoration: none;
+
+    font-weight: 600;
+}
+
+.client-link:hover,
+.task-link:hover {
+    text-decoration: underline;
+}
+
+.cell-client .client-link {
+    font-weight: 550;
+}
+
+/* "TASK-0042 — Something" as one clickable cell in the operational sheets. */
+.task-ref {
+    display: flex;
+
+    align-items: baseline;
+
+    gap: 10px;
+
+    color: var(--text);
+    text-decoration: none;
+}
+
+.task-ref:hover .task-ref__title {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+.task-ref__title {
+    min-width: 0;
+
+    overflow: hidden;
+
+    text-overflow: ellipsis;
+
+    white-space: nowrap;
+}
+
+/* --------------------------------------------- operational team sheets */
+
+.table--sheet td,
+.table--sheet th {
+    vertical-align: middle;
+}
+
+.table--sheet td:nth-child(3) {
+    max-width: 0;
+    width: 55%;
+}
+
+.badge--presence-ACTIVE {
+    color: var(--st-completed-fg);
+
+    background: var(--st-completed-bg);
+
+    border-color: color-mix(
+        in srgb,
+        var(--st-completed-fg) 35%,
+        transparent
+    );
+}
+
+.badge--presence-IDLE {
+    color: var(--st-closed-fg);
+
+    background: var(--st-closed-bg);
+
+    border-color: var(--border);
+}
+
+/* --------------------------------------------------- client details page */
+
+.breadcrumb {
+    display: flex;
+
+    align-items: center;
+
+    gap: 8px;
+
+    margin-bottom: 14px;
+
+    color: var(--text-muted);
+
+    font-size: 12.5px;
+}
+
+.breadcrumb a {
+    color: var(--text-soft);
+    text-decoration: none;
+}
+
+.breadcrumb a:hover {
+    color: var(--accent);
+
+    text-decoration: underline;
+}
+
+#client-notes {
+    max-width: 80ch;
+
+    color: var(--text-soft);
+
+    line-height: 1.6;
+
+    white-space: pre-wrap;
+}
+
+#company-grid,
+#commercial-grid {
+    grid-template-columns:
+        repeat(
+            2,
+            minmax(0, 1fr)
+        );
+}
+
 
 /* ==========================================================================
    BADGES
@@ -1547,6 +1673,21 @@ img {
     flex-wrap: wrap;
 }
 
+/* The brief reads under the title, so it is sized between the h1 and a meta value. */
+.detail-head__description {
+    max-width: 78ch;
+
+    margin: -2px 0 10px;
+
+    color: var(--text-soft);
+
+    font-size: 14px;
+
+    line-height: 1.55;
+
+    white-space: pre-wrap;
+}
+
 .detail-grid {
     display: grid;
 
@@ -1699,12 +1840,6 @@ img {
     background: var(--accent-soft);
 
     border-color: var(--accent-border);
-}
-
-.msg--original .msg__bubble {
-    background: var(--surface-alt);
-
-    border-left: 3px solid var(--border-strong);
 }
 
 .msg--internal .msg__bubble {
@@ -3054,12 +3189,6 @@ html[data-theme="dark"] .msg--mine .msg__bubble {
     background: var(--accent-soft);
 
     border-color: #294a78;
-}
-
-html[data-theme="dark"] .msg--original .msg__bubble {
-    background: #151d27;
-
-    border-color: #2a3543;
 }
 
 html[data-theme="dark"] .msg--internal .msg__bubble {

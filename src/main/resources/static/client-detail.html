@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1200">
+    <title>Client details | Admin++</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/css/style.css">
+    <script>try{if(localStorage.getItem('admin++-theme')==='dark')document.documentElement.dataset.theme='dark';}catch(e){}</script>
+</head>
+<body>
+
+<header class="app-header">
+    <div class="app-header__inner">
+        <a class="brand" href="/dashboard.html">
+            <span class="brand__mark">A++</span>
+            <span>Admin++</span>
+        </a>
+
+        <nav class="nav" aria-label="Main navigation">
+            <a class="nav__link" href="/dashboard.html">Dashboard</a>
+            <a class="nav__link" href="/my-tasks.html" data-hide-when-client>My Tasks</a>
+            <a class="nav__link" href="/all-tasks.html">All Tasks</a>
+            <a class="nav__link" href="/profile.html">Profile</a>
+            <a class="nav__link is-hidden" data-role="ADMIN" href="/users.html">Users</a>
+            <a class="nav__link is-hidden" data-role="MANAGER" href="/clients.html">Clients</a>
+            <a class="nav__link is-hidden" data-client-only href="/client-detail.html">My Company</a>
+        </nav>
+
+        <div class="app-header__right">
+            <div class="user-chip">
+                <span class="user-chip__name" data-auth-username>…</span>
+                <span class="user-chip__role" data-auth-role></span>
+                <span class="avatar" data-auth-avatar>?</span>
+            </div>
+            <button type="button" class="btn btn--ghost btn--sm" data-logout>Log out</button>
+        </div>
+    </div>
+</header>
+
+<main class="main">
+    <div id="page-error" class="alert" role="alert" aria-live="polite"></div>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="/dashboard.html">Dashboard</a>
+        <span aria-hidden="true">/</span>
+        <span id="crumb-name">Client details</span>
+    </nav>
+
+    <div class="page-head">
+        <div>
+            <h1 id="client-name">Client details</h1>
+            <p id="client-subtitle" class="muted">Loading…</p>
+        </div>
+        <div class="page-head__actions">
+            <button type="button" class="btn is-hidden" data-open-create>New task</button>
+        </div>
+    </div>
+
+    <!-- ----------------------------------------------- task load (counters) -->
+    <section class="section" aria-label="Task counts">
+        <div class="tiles">
+            <div class="tile tile--open">
+                <div class="tile__label">Open</div>
+                <div class="tile__value" id="stat-open">–</div>
+            </div>
+            <div class="tile tile--progress">
+                <div class="tile__label">In progress</div>
+                <div class="tile__value" id="stat-in-progress">–</div>
+            </div>
+            <div class="tile tile--completed">
+                <div class="tile__label">Completed</div>
+                <div class="tile__value" id="stat-completed">–</div>
+            </div>
+            <div class="tile tile--total">
+                <div class="tile__label">Total visible</div>
+                <div class="tile__value" id="stat-total">–</div>
+            </div>
+        </div>
+    </section>
+
+    <div class="field-row">
+        <section class="section" style="flex:1" aria-label="Company details">
+            <div class="section__head"><h2>Company</h2></div>
+            <div class="card"><div class="card__body">
+                <div class="detail-grid" id="company-grid"></div>
+            </div></div>
+        </section>
+
+        <!-- Commercial record: managers/admins, and the customer reading itself. -->
+        <section class="section is-hidden" id="commercial-section" style="flex:1" aria-label="Billing">
+            <div class="section__head"><h2>Billing</h2></div>
+            <div class="card"><div class="card__body">
+                <div class="detail-grid" id="commercial-grid"></div>
+            </div></div>
+        </section>
+    </div>
+
+    <!-- Internal-only notes: never sent to a customer account. -->
+    <section class="section is-hidden" id="notes-section" aria-label="Internal notes">
+        <div class="section__head"><h2>Internal notes</h2></div>
+        <div class="card"><div class="card__body">
+            <div class="multiline" id="client-notes"></div>
+        </div></div>
+    </section>
+
+    <section class="section" aria-label="Recent tasks">
+        <div class="section__head">
+            <h2>Recent tasks</h2>
+            <span class="section__hint">The ten most recently updated tasks you are allowed to open.</span>
+        </div>
+        <div class="card">
+            <div class="table-wrap">
+                <table class="table" id="client-tasks-table">
+                    <thead>
+                    <tr>
+                        <th>Task no</th>
+                        <th>Title</th>
+                        <th>Status</th>
+                        <th>Priority</th>
+                        <th>Assigned to</th>
+                        <th>Last updated</th>
+                    </tr>
+                    </thead>
+                    <tbody id="client-tasks-body">
+                    <tr><td colspan="6" class="muted" style="text-align:center;padding:30px">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+</main>
+
+<footer class="app-foot">Admin++ | Logged in as <span data-auth-footer-user>&hellip;</span></footer>
+
+<!-- ------------------------------------------------------- create dialog -->
+<div class="modal" id="create-task-modal" role="dialog" aria-modal="true" aria-labelledby="create-task-heading">
+    <div class="modal__box">
+        <div class="modal__head">
+            <h3 id="create-task-heading">Create a new task</h3>
+            <button type="button" class="modal__close" id="create-task-close" aria-label="Close">&times;</button>
+        </div>
+        <form id="create-task-form" novalidate>
+            <div class="modal__body">
+                <div id="create-task-alert" class="alert" role="alert" aria-live="polite"></div>
+
+                <div class="field">
+                    <label class="label" for="task-title">Title <span class="req">*</span></label>
+                    <input class="input" type="text" id="task-title" maxlength="200" required
+                           placeholder="Short, actionable summary">
+                </div>
+
+                <div class="field">
+                    <label class="label" for="task-description">Description</label>
+                    <textarea class="textarea" id="task-description" maxlength="8000"
+                              placeholder="Context, acceptance criteria, links…"></textarea>
+                    <div class="hint">The description is posted as the first message of the thread.</div>
+                </div>
+
+                <div class="field-row">
+                    <div class="field">
+                        <label class="label" for="task-priority">Priority <span class="req">*</span></label>
+                        <select class="select" id="task-priority">
+                            <option value="NORMAL" selected>Normal</option>
+                            <option value="URGENT">Urgent</option>
+                        </select>
+                    </div>
+                    <div class="field" id="field-assignee">
+                        <label class="label" for="task-assignee">Assign to</label>
+                        <select class="select" id="task-assignee">
+                            <option value="">— Unassigned —</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="hint" id="client-create-hint" style="display:none">
+                    The request is raised against <span id="client-create-company">your company</span> and stays
+                    unassigned until the delivery team picks it up.
+                </div>
+            </div>
+            <div class="modal__foot">
+                <button type="button" class="btn btn--secondary" id="create-task-cancel">Cancel</button>
+                <button type="submit" class="btn" id="create-task-submit">Create task</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script src="/js/app.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/client-detail.js"></script>
+</body>
+</html>

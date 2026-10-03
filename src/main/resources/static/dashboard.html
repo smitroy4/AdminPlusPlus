@@ -24,6 +24,7 @@
             <a class="nav__link" href="/profile.html">Profile</a>
             <a class="nav__link is-hidden" data-role="ADMIN" href="/users.html">Users</a>
             <a class="nav__link is-hidden" data-role="MANAGER" href="/clients.html">Clients</a>
+            <a class="nav__link is-hidden" data-client-only href="/client-detail.html">My Company</a>
         </nav>
 
         <div class="app-header__right">
@@ -43,15 +44,16 @@
     <div class="page-head">
         <div>
             <h1>Dashboard</h1>
-            <p>Your tasks, associate metrics for coordinators, and the company backlog for managers and admins.</p>
+            <p id="dashboard-intro">Your personal workload, your team's operational status, and the company backlog.</p>
         </div>
         <div class="page-head__actions">
-            <button type="button" class="btn is-hidden" data-role="MANAGER" data-open-create>New task</button>
+            <button type="button" class="btn is-hidden" data-open-create>New task</button>
         </div>
     </div>
 
     <!-- ------------------------------------------------------------- tiles -->
-    <section class="section" aria-label="My task counts">
+    <!-- Admins hold no assignments, so their personal counters are dropped. -->
+    <section class="section" data-hide-when-admin aria-label="My task counts">
         <div class="section__head"><h2>My work</h2></div>
         <div class="tiles">
             <div class="tile tile--open">
@@ -73,32 +75,9 @@
         </div>
     </section>
 
-    <!-- ----------------------------------------- coordinator: associate load -->
-    <section class="section is-hidden" id="team-tiles-section" aria-label="Associate task counts">
-        <div class="section__head"><h2>Associate workload <span class="muted" style="font-weight:400">(team)</span></h2></div>
-        <div class="tiles">
-            <div class="tile tile--open">
-                <div class="tile__label">Open</div>
-                <div class="tile__value" id="tile-team-open">–</div>
-            </div>
-            <div class="tile tile--progress">
-                <div class="tile__label">In progress</div>
-                <div class="tile__value" id="tile-team-progress">–</div>
-            </div>
-            <div class="tile tile--completed">
-                <div class="tile__label">Completed</div>
-                <div class="tile__value" id="tile-team-completed">–</div>
-            </div>
-            <div class="tile tile--total">
-                <div class="tile__label">Total</div>
-                <div class="tile__value" id="tile-team-total">–</div>
-            </div>
-        </div>
-    </section>
-
     <!-- ------------------------------------- manager/admin: company-wide load -->
     <section class="section is-hidden" id="all-tiles-section" aria-label="Company-wide task counts">
-        <div class="section__head"><h2>Company-wide <span class="muted" style="font-weight:400">(everyone)</span></h2></div>
+        <div class="section__head"><h2>Company-wide <span class="muted" style="font-weight:400"></span></h2></div>
         <div class="tiles">
             <div class="tile tile--open">
                 <div class="tile__label">Open</div>
@@ -119,10 +98,116 @@
         </div>
     </section>
 
-    <!-- ------------------------------------------------- my open tasks table -->
-    <section class="section" aria-label="My open tasks">
+    <!-- --------------------------------------- customer: own company record -->
+    <section class="section is-hidden" data-client-only id="client-card-section" aria-label="My company">
+        <div class="section__head"><h2>My company</h2></div>
+        <div class="card">
+            <div class="card__body">
+                <div class="detail-grid">
+                    <div class="meta">
+                        <div class="meta__label">Company</div>
+                        <div class="meta__value" id="client-card-name">—</div>
+                    </div>
+                    <div class="meta">
+                        <div class="meta__label">Open tasks</div>
+                        <div class="meta__value" id="client-card-open">—</div>
+                    </div>
+                    <div class="meta">
+                        <div class="meta__label">In progress</div>
+                        <div class="meta__value" id="client-card-progress">—</div>
+                    </div>
+                    <div class="meta">
+                        <div class="meta__label">Contact</div>
+                        <div class="meta__value" id="client-card-contact">—</div>
+                    </div>
+                </div>
+                <div class="btn-group" style="padding-top:14px;border-top:1px solid var(--border)">
+                    <a class="btn" id="client-card-link" href="/client-detail.html">View client details</a>
+                    <span class="hint" style="align-self:center">Raise a request with the New task button above &mdash; it lands unassigned with the delivery team.</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ------------------------------------------ operational team sheets -->
+    <!-- Every row is derived from live task data by /api/dashboard/team. -->
+    <section class="section is-hidden" id="sheet-managers-section" aria-label="Managers">
         <div class="section__head">
-            <h2>My open tasks</h2>
+            <h2>Managers</h2>
+            <span class="section__hint" id="sheet-managers-hint">Who is working on what right now.</span>
+        </div>
+        <div class="card card__body--flush">
+            <div class="table-wrap">
+                <table class="table table--sheet" id="sheet-managers-table">
+                    <thead>
+                    <tr>
+                        <th>Manager</th>
+                        <th>Status</th>
+                        <th>Current task</th>
+                        <th>Since</th>
+                    </tr>
+                    </thead>
+                    <tbody id="sheet-managers-body">
+                    <tr><td colspan="4" class="muted" style="text-align:center;padding:24px">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section class="section is-hidden" id="sheet-coordinators-section" aria-label="Coordinators">
+        <div class="section__head">
+            <h2>Coordinators</h2>
+            <span class="section__hint">Who is working on what right now.</span>
+        </div>
+        <div class="card card__body--flush">
+            <div class="table-wrap">
+                <table class="table table--sheet" id="sheet-coordinators-table">
+                    <thead>
+                    <tr>
+                        <th>Coordinator</th>
+                        <th>Status</th>
+                        <th>Current task</th>
+                        <th>Since</th>
+                    </tr>
+                    </thead>
+                    <tbody id="sheet-coordinators-body">
+                    <tr><td colspan="4" class="muted" style="text-align:center;padding:24px">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section class="section is-hidden" id="sheet-associates-section" aria-label="Associates">
+        <div class="section__head">
+            <h2>Associates</h2>
+            <span class="section__hint">Who is working on what right now.</span>
+        </div>
+        <div class="card card__body--flush">
+            <div class="table-wrap">
+                <table class="table table--sheet" id="sheet-associates-table">
+                    <thead>
+                    <tr>
+                        <th>Associate</th>
+                        <th>Status</th>
+                        <th>Current task</th>
+                        <th>Since</th>
+                    </tr>
+                    </thead>
+                    <tbody id="sheet-associates-body">
+                    <tr><td colspan="4" class="muted" style="text-align:center;padding:24px">Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ------------------------------------------------- my open tasks table -->
+    <!-- Admins are never the assignee, so the table has nothing to show. -->
+    <section class="section" data-hide-when-admin aria-label="My open tasks">
+        <div class="section__head">
+            <h2 id="my-tasks-heading">My open tasks</h2>
             <span class="section__hint" id="my-tasks-count">…</span>
         </div>
         <div class="card">
@@ -238,6 +323,11 @@
                             <option value="">— Unassigned —</option>
                         </select>
                     </div>
+                </div>
+
+                <div class="hint" id="client-create-hint" style="display:none">
+                    The request is raised against your company and stays unassigned until the delivery
+                    team picks it up.
                 </div>
             </div>
             <div class="modal__foot">

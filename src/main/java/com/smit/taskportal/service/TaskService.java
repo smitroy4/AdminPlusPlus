@@ -141,12 +141,26 @@ public class TaskService {
 
     // ----------------------------------------------------------------- writes
 
-    /** Creates a task, optionally assigning it in the same call. Managers / admins only. */
+    /**
+     * Creates a task, optionally assigning it in the same call.
+     *
+     * <p>Two kinds of caller may raise work:
+     *
+     * <ul>
+     *   <li><b>MANAGER / ADMIN</b> — full control: they pick the customer and may
+     *       assign an agent straight away.</li>
+     *   <li><b>CLIENT</b> — may open a ticket against <em>their own</em> customer
+     *       only, and may never nominate an agent: the task lands unassigned in the
+     *       backlog for the internal team to pick up. Both restrictions are checked
+     *       here, so they hold no matter what the UI sends.</li>
+     * </ul>
+     */
     @Transactional
     public TaskDto createTask(CreateTaskRequest request) {
         AppUserPrincipal actor = currentUser.require();
-        if (!actor.isManagerOrAbove()) {
-            throw new ForbiddenException("Only a manager or admin can create a task");
+        boolean raisedByClient = actor.isClient();
+        if (!raisedByClient && !actor.isManagerOrAbove()) {
+            throw new ForbiddenException("Only a manager, admin or client can create a task");
         }
 
         Task task = Task.builder()
@@ -158,12 +172,16 @@ public class TaskService {
                 .createdBy(getUser(actor.id()))
                 .build();
 
-        if (request.assignedToId() != null) {
-            task.setAssignedTo(getUser(request.assignedToId()));
-        }
-        if (request.clientId() != null) {
-            task.setClient(clientRepository.findById(request.clientId())
-                    .orElseThrow(() -> ResourceNotFoundException.of("Client", request.clientId())));
+        if (raisedByClient) {
+            applyClientRules(request, actor, task);
+        } else {
+            if (request.assignedToId() != null) {
+                task.setAssignedTo(getUser(request.assignedToId()));
+            }
+            if (request.clientId() != null) {
+                task.setClient(clientRepository.findById(request.clientId())
+                        .orElseThrow(() -> ResourceNotFoundException.of("Client", request.clientId())));
+            }
         }
 
         Task saved = taskRepository.save(task);
@@ -180,6 +198,25 @@ public class TaskService {
         }
 
         return TaskDto.from(saved);
+    }
+
+    /**
+     * A client always files against its own customer and never assigns an agent.
+     * Rejecting (rather than silently ignoring) keeps the rule visible instead of
+     * letting a caller believe it picked an assignee.
+     */
+    private void applyClientRules(CreateTaskRequest request, AppUserPrincipal actor, Task task) {
+        if (request.assignedToId() != null) {
+            throw new ForbiddenException("Client accounts cannot assign a task to an agent");
+        }
+        if (actor.clientId() == null) {
+            throw new BadRequestException("Your account is not linked to a client record");
+        }
+        if (request.clientId() != null && !request.clientId().equals(actor.clientId())) {
+            throw new ForbiddenException("Client accounts can only raise tasks for their own customer");
+        }
+        task.setClient(clientRepository.findById(actor.clientId())
+                .orElseThrow(() -> ResourceNotFoundException.of("Client", actor.clientId())));
     }
 
     /** Managers and admins may change title / description / priority. */

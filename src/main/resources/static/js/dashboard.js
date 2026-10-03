@@ -1,18 +1,25 @@
 /* ==========================================================================
-   dashboard.js - stats tiles, "My Open Tasks" table, the shared "All Open
-   Tasks" table plus the create-task dialog.
+   dashboard.js - the role-scoped home page.
+
+   Layout is decided by the account's role, and every number comes from the
+   server:
+
+     MANAGER / ADMIN  My work, Company-wide, one sheet per level they supervise
+     COORDINATOR       My work, Associates sheet
+     ASSOCIATE         My work, no management sheets
+     CLIENT            My company card, own tasks, New task to raise a request
+
+   An operational sheet row is derived, not stored: a member is ACTIVE while
+   they hold an IN_PROGRESS task and IDLE otherwise.
    ========================================================================== */
 'use strict';
 
 document.addEventListener('DOMContentLoaded', () => {
     Auth.init(async () => {
         /* The shared backlog is for staff; clients only get their own work
-           (loadAllTasks bails out for them). Counters and the create button
-           stay role-restricted on top of that. */
-        await Promise.all([loadStats(), loadMyTasks(), loadAllTasks()]);
-        if (Auth.isManagerOrAbove()) {
-            wireCreateDialog();
-        }
+           (loadAllTasks bails out for them). */
+        await Promise.all([loadStats(), loadMyTasks(), loadAllTasks(), loadSheets(), loadClientCard()]);
+        wireCreateDialog();
     }).catch(showFatal);
 });
 
@@ -32,14 +39,8 @@ async function loadStats() {
             if (totalLabel) {
                 totalLabel.textContent = 'Total';
             }
-        }
-
-        if (stats.canViewTeam) {
-            Auth.show(App.$('#team-tiles-section'));
-            setTile('#tile-team-open', stats.teamOpen);
-            setTile('#tile-team-progress', stats.teamInProgress);
-            setTile('#tile-team-completed', stats.teamCompleted);
-            setTile('#tile-team-total', stats.teamTotal);
+            /* …and the same holds for the table below it. */
+            setText('#my-tasks-heading', 'Our open tasks');
         }
 
         if (stats.canViewAll) {
@@ -73,15 +74,105 @@ function renderBreakdown(selector, buckets, kind) {
     }
     const max = Math.max(1, ...buckets.map((bucket) => bucket.count));
     node.innerHTML = buckets.map((bucket) => {
-        const label = kind === 'status' ? App.statusLabel(bucket.label) : App.priorityLabel(bucket.label);
         const badge = kind === 'status' ? App.statusBadge(bucket.label) : App.priorityBadge(bucket.label);
         const width = Math.round((bucket.count / max) * 100);
         return '<div class="bar-row">'
             + '<div class="bar-row__head">' + badge + '<span class="bar-row__value">' + App.esc(bucket.count) + '</span></div>'
             + '<div class="bar-track"><div class="bar-fill bar-fill--' + App.esc(bucket.label.toLowerCase()) + '" style="width:' + width + '%"></div></div>'
-            + '<div class="visually-hidden">' + App.esc(label) + '</div>'
             + '</div>';
     }).join('');
+}
+
+/* -------------------------------------------------------- operational sheets */
+
+/**
+ * Which sheets this role gets. It mirrors the server's authorisation in
+ * TeamService — the UI only ever shows what the endpoint would accept, and the
+ * endpoint re-checks it regardless.
+ */
+function sheetPlan() {
+    if (Auth.isAdmin()) {
+        return [
+            { role: 'MANAGER', section: '#sheet-managers-section', body: '#sheet-managers-body' },
+            { role: 'COORDINATOR', section: '#sheet-coordinators-section', body: '#sheet-coordinators-body' },
+            { role: 'ASSOCIATE', section: '#sheet-associates-section', body: '#sheet-associates-body' }
+        ];
+    }
+    if (Auth.isManagerOrAbove()) {
+        return [
+            { role: 'COORDINATOR', section: '#sheet-coordinators-section', body: '#sheet-coordinators-body' },
+            { role: 'ASSOCIATE', section: '#sheet-associates-section', body: '#sheet-associates-body' }
+        ];
+    }
+    if (Auth.isCoordinatorOrAbove()) {
+        return [{ role: 'ASSOCIATE', section: '#sheet-associates-section', body: '#sheet-associates-body' }];
+    }
+    return [];
+}
+
+async function loadSheets() {
+    const plan = sheetPlan();
+    if (plan.length === 0) {
+        return;
+    }
+    plan.forEach((sheet) => Auth.show(App.$(sheet.section)));
+
+    await Promise.all(plan.map(async (sheet) => {
+        const tbody = App.$(sheet.body);
+        try {
+            const response = await App.getJson('/api/dashboard/team?role=' + encodeURIComponent(sheet.role));
+            renderSheet(tbody, response.data);
+        } catch (error) {
+            tbody.innerHTML = '<tr><td colspan="4">'
+                + App.emptyState('Could not load the sheet', error.message) + '</td></tr>';
+        }
+    }));
+}
+
+function renderSheet(tbody, members) {
+    if (!tbody) {
+        return;
+    }
+    if (!members || members.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4">'
+            + App.emptyState('Nobody to show yet', 'Accounts with this role will appear here.')
+            + '</td></tr>';
+        return;
+    }
+    const now = Date.now();
+    tbody.innerHTML = members.map((member) => {
+        /* `since` is the current task's last update; an idle member carries none. */
+        const since = member.since
+            ? '<span class="cell-date" title="' + App.esc(App.formatDate(member.since)) + '">'
+                + App.esc(elapsed(member.since, now)) + '</span>'
+            : '<span class="cell-unassigned">&mdash;</span>';
+        return '<tr>'
+            + '<td>' + App.userCell(member.user) + '</td>'
+            + '<td>' + App.presenceBadge(member.presence) + '</td>'
+            + '<td>' + App.taskRefCell(member.currentTask) + '</td>'
+            + '<td>' + since + '</td>'
+            + '</tr>';
+    }).join('');
+}
+
+/** "2h 15m" / "3d" — how long a member has been on the current task. */
+function elapsed(from, now) {
+    const millis = now - new Date(from).getTime();
+    if (!isFinite(millis) || millis < 0) {
+        return 'just now';
+    }
+    const minutes = Math.floor(millis / 60000);
+    if (minutes < 1) {
+        return 'just now';
+    }
+    if (minutes < 60) {
+        return minutes + 'm';
+    }
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) {
+        return hours + 'h ' + (minutes % 60) + 'm';
+    }
+    return Math.floor(hours / 24) + 'd';
 }
 
 /* ------------------------------------------------------------------ tables */
@@ -142,9 +233,13 @@ function truncate(text, max) {
 
 function wireRowClicks(tbody) {
     tbody.addEventListener('click', (event) => {
+        /* Links inside a row (client name, task number) keep their own target. */
+        if (event.target.closest('a')) {
+            return;
+        }
         const row = event.target.closest('tr[data-task-id]');
         if (row) {
-            window.location.href = '/task-detail.html?id=' + encodeURIComponent(row.dataset.taskId);
+            window.location.href = App.taskDetailUrl(row.dataset.taskId);
         }
     });
     tbody.addEventListener('keydown', (event) => {
@@ -154,7 +249,7 @@ function wireRowClicks(tbody) {
         const row = event.target.closest('tr[data-task-id]');
         if (row) {
             event.preventDefault();
-            window.location.href = '/task-detail.html?id=' + encodeURIComponent(row.dataset.taskId);
+            window.location.href = App.taskDetailUrl(row.dataset.taskId);
         }
     });
 }
@@ -203,20 +298,73 @@ function setCount(selector, value) {
     }
 }
 
+/* -------------------------------------------------------------- client card */
+
+/** A customer lands here straight after login: this is the company it belongs to. */
+async function loadClientCard() {
+    if (!Auth.isClient()) {
+        return;
+    }
+    const clientId = Auth.currentUserClientId();
+    if (!clientId) {
+        return;
+    }
+    try {
+        const response = await App.getJson('/api/clients/' + encodeURIComponent(clientId) + '/profile');
+        const profile = response.data;
+        setText('#client-card-name', profile.client.name);
+        setText('#client-card-contact', [profile.client.contactName, profile.client.contactEmail]
+            .filter(Boolean).join(' · ') || '—');
+        setText('#client-card-open', String(profile.taskStats.open));
+        setText('#client-card-progress', String(profile.taskStats.inProgress));
+        const link = App.$('#client-card-link');
+        if (link) {
+            link.setAttribute('href', App.clientDetailUrl(clientId));
+        }
+    } catch (error) {
+        App.showAlert('#stats-error', error.message, 'error');
+    }
+}
+
+function setText(selector, value) {
+    const node = App.$(selector);
+    if (node) {
+        node.textContent = value;
+    }
+}
+
 /* --------------------------------------------------------- create dialog */
 
-/* Only wired for MANAGER / ADMIN: associates, coordinators and clients have
-   no "New task" button. */
+/**
+ * Wired for every role that may raise work: MANAGER, ADMIN and CLIENT.
+ * A client's request is forced onto its own customer and left unassigned —
+ * the server rejects anything else, this only keeps the form honest.
+ */
 function wireCreateDialog() {
     const dialog = App.$('#create-task-modal');
     const form = App.$('#create-task-form');
     if (!dialog || !form) {
         return;
     }
+    if (!Auth.isManagerOrAbove() && !Auth.isClient()) {
+        return;
+    }
 
-    loadAssignableUsers();
+    if (Auth.isClient()) {
+        const field = App.$('#field-assignee');
+        if (field) {
+            field.remove();
+        }
+        const hint = App.$('#client-create-hint');
+        if (hint) {
+            hint.style.display = '';
+        }
+    } else {
+        loadAssignableUsers();
+    }
 
     App.$$('[data-open-create]').forEach((button) => {
+        Auth.show(button);
         button.addEventListener('click', () => {
             form.reset();
             App.hideAlert('#create-task-alert');
@@ -268,7 +416,7 @@ function wireCreateDialog() {
             const response = await App.postJson('/api/task', payload);
             App.toast(response.message || 'Task created', 'success');
             close();
-            window.location.href = '/task-detail.html?id=' + encodeURIComponent(response.data.id);
+            window.location.href = App.taskDetailUrl(response.data.id);
         } catch (error) {
             App.showAlert('#create-task-alert', error.message, 'error');
         } finally {
@@ -294,8 +442,5 @@ async function loadAssignableUsers() {
 }
 
 function showFatal(error) {
-    const node = App.$('#stats-error');
-    if (node) {
-        App.showAlert('#stats-error', error.message || 'Unexpected error', 'error');
-    }
+    App.showAlert('#stats-error', error.message || 'Unexpected error', 'error');
 }

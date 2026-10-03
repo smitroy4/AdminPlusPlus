@@ -685,11 +685,12 @@ class TaskportalApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].email").value("jane@acme.example"));
 
+        // Withheld fields are left out of the payload rather than sent as nulls.
         mockMvc.perform(get("/api/clients").session(associate))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].name").value("Acme Corporation"))
-                .andExpect(jsonPath("$.data[0].email").value(nullValue()))
-                .andExpect(jsonPath("$.data[0].phone").value(nullValue()));
+                .andExpect(jsonPath("$.data[0].email").doesNotExist())
+                .andExpect(jsonPath("$.data[0].phone").doesNotExist());
 
         // A task the associate may read: the client name shows, the contact block does not.
         JsonNode clients = dataOf(mockMvc.perform(get("/api/clients").session(manager))
@@ -1074,5 +1075,225 @@ class TaskportalApplicationTests {
             end++;
         }
         return Long.parseLong(json.substring(start, end));
+    }
+
+    /* ================================================= operational sheets */
+
+    /**
+     * The dashboard sheets are derived from live work and scoped by role: a member
+     * is ACTIVE exactly while they hold an IN_PROGRESS task, and each role only
+     * reads the sheet of the level it supervises.
+     */
+    @Test
+    void operationalSheetsAreDerivedFromLiveWorkAndScopedByRole() throws Exception {
+        MockHttpSession admin = login("admin", "Admin@12345");
+        MockHttpSession manager = login("manager", "Manager@12345");
+        MockHttpSession coordinator = login("coordinator", "Coordinator@12345");
+        MockHttpSession associate = login("employee", "Employee@12345");
+        MockHttpSession client = login("client", "Client@12345");
+
+        // An admin may read every staff sheet.
+        for (String role : List.of("MANAGER", "COORDINATOR", "ASSOCIATE")) {
+            mockMvc.perform(get("/api/dashboard/team").param("role", role).session(admin))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data").isArray());
+        }
+
+        // A manager reaches the levels below it and nothing above.
+        mockMvc.perform(get("/api/dashboard/team").param("role", "COORDINATOR").session(manager))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/dashboard/team").param("role", "ASSOCIATE").session(manager))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/dashboard/team").param("role", "MANAGER").session(manager))
+                .andExpect(status().isForbidden());
+
+        // A coordinator only supervises associates.
+        mockMvc.perform(get("/api/dashboard/team").param("role", "ASSOCIATE").session(coordinator))
+                .andExpect(status().isOk());
+        for (String role : List.of("MANAGER", "COORDINATOR")) {
+            mockMvc.perform(get("/api/dashboard/team").param("role", role).session(coordinator))
+                    .andExpect(status().isForbidden());
+        }
+
+        // Associates and clients have no sheet at all, and CLIENT is not a sheet role.
+        for (MockHttpSession session : List.of(associate, client)) {
+            for (String role : List.of("MANAGER", "COORDINATOR", "ASSOCIATE", "CLIENT")) {
+                mockMvc.perform(get("/api/dashboard/team").param("role", role).session(session))
+                        .andExpect(status().isForbidden());
+            }
+        }
+
+        // Nobody is assigned an IN_PROGRESS task in the seed, so the manager is IDLE.
+        JsonNode managers = sheet(admin, "MANAGER");
+        assertThat(managers).as("the seeded manager appears on its own sheet").isNotEmpty();
+        JsonNode managerRow = rowFor(managers, "manager");
+        assertThat(managerRow.get("presence").asText()).isEqualTo("IDLE");
+        assertThat(managerRow.get("currentTask").isNull())
+                .as("an idle member carries no current task").isTrue();
+
+        // 'employee' holds an IN_PROGRESS task from the seed, so it is ACTIVE on it.
+        JsonNode associates = sheet(admin, "ASSOCIATE");
+        JsonNode employeeRow = rowFor(associates, "employee");
+        assertThat(employeeRow.get("presence").asText()).isEqualTo("ACTIVE");
+        assertThat(employeeRow.get("currentTask").get("status").asText()).isEqualTo("IN_PROGRESS");
+        assertThat(employeeRow.get("since").asText()).as("an active member says since when").isNotBlank();
+
+        // 'employee2' was only ever given an OPEN task, so it stays IDLE.
+        JsonNode idleRow = rowFor(associates, "employee2");
+        assertThat(idleRow.get("presence").asText()).isEqualTo("IDLE");
+        assertThat(idleRow.get("since").isNull()).as("an idle member has no since stamp").isTrue();
+    }
+
+    /** Every sheet row names its member, so the sheets are never anonymous. */
+    @Test
+    void everyOperationalSheetRowIdentifiesItsMember() throws Exception {
+        MockHttpSession admin = login("admin", "Admin@12345");
+
+        for (String role : List.of("MANAGER", "COORDINATOR", "ASSOCIATE")) {
+            JsonNode sheet = sheet(admin, role);
+            for (JsonNode row : sheet) {
+                assertThat(row.get("role").asText()).isEqualTo(role);
+                assertThat(row.get("user").get("username").asText()).isNotBlank();
+                assertThat(row.get("presence").asText()).isIn("ACTIVE", "IDLE");
+            }
+        }
+    }
+
+    private JsonNode sheet(MockHttpSession session, String role) throws Exception {
+        return dataOf(mockMvc.perform(get("/api/dashboard/team").param("role", role).session(session))
+                .andExpect(status().isOk())
+                .andReturn());
+    }
+
+    private JsonNode rowFor(JsonNode sheet, String username) {
+        for (JsonNode row : sheet) {
+            if (username.equals(row.get("user").get("username").asText())) {
+                return row;
+            }
+        }
+        throw new AssertionError("No sheet row for '%s' in %s".formatted(username, sheet));
+    }
+
+    /* ================================================== client details page */
+
+    /**
+     * One endpoint, three payloads. The commercial block goes to managers/admins
+     * and to a customer reading itself; internal notes stay internal; everybody
+     * else gets identity only, with the withheld fields absent rather than null.
+     */
+    @Test
+    void clientDetailsPayloadIsShapedByTheCallersRole() throws Exception {
+        MockHttpSession manager = login("manager", "Manager@12345");
+        MockHttpSession client = login("client", "Client@12345");
+        MockHttpSession associate = login("employee", "Employee@12345");
+
+        JsonNode staff = dataOf(mockMvc.perform(get("/api/clients").session(manager))
+                .andExpect(status().isOk())
+                .andReturn());
+        long acmeId = idByName(staff, "Acme Corporation");
+        long globexId = idByName(staff, "Globex Industries");
+
+        mockMvc.perform(get("/api/clients/" + acmeId + "/profile").session(manager))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.client.notes").exists())
+                .andExpect(jsonPath("$.data.client.industry").value("Manufacturing"))
+                .andExpect(jsonPath("$.data.client.paymentStatus").exists())
+                .andExpect(jsonPath("$.data.taskStats.total").isNumber())
+                .andExpect(jsonPath("$.data.recentTasks").isArray());
+
+        // The customer reads its own record commercially but not the internal notes.
+        mockMvc.perform(get("/api/clients/" + acmeId + "/profile").session(client))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.client.notes").doesNotExist())
+                .andExpect(jsonPath("$.data.client.paymentStatus").exists())
+                .andExpect(jsonPath("$.data.client.organizationName").value("Acme Corporation, Inc."));
+
+        // A customer asking for somebody else is indistinguishable from a bad id.
+        mockMvc.perform(get("/api/clients/" + globexId + "/profile").session(client))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/clients/999999/profile").session(client))
+                .andExpect(status().isNotFound());
+
+        // Associates get the name and nothing else — the commercial block is absent.
+        String raw = mockMvc.perform(get("/api/clients/" + acmeId + "/profile").session(associate))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.client.name").value("Acme Corporation"))
+                .andReturn().getResponse().getContentAsString();
+        JsonNode summary = dataOf(mockMvc.perform(get("/api/clients/" + acmeId + "/profile")
+                .session(associate)).andExpect(status().isOk()).andReturn());
+        assertThat(summary.get("client").has("notes"))
+                .as("notes must be withheld, not sent as null: %s", raw).isFalse();
+        assertThat(summary.get("client").has("paymentStatus"))
+                .as("the commercial block must be withheld, not sent as null").isFalse();
+        assertThat(summary.get("client").has("industry")).isFalse();
+    }
+
+    /* ============================================ client-raised tasks */
+
+    /** A client may raise work, but only against its own customer and unassigned. */
+    @Test
+    void clientCanRaiseATaskOnlyAgainstItsOwnCustomerAndUnassigned() throws Exception {
+        MockHttpSession client = login("client", "Client@12345");
+        MockHttpSession manager = login("manager", "Manager@12345");
+        MockHttpSession associate = login("employee", "Employee@12345");
+
+        JsonNode catalogue = dataOf(mockMvc.perform(get("/api/clients").session(manager))
+                .andExpect(status().isOk())
+                .andReturn());
+        long acmeId = idByName(catalogue, "Acme Corporation");
+        long globexId = idByName(catalogue, "Globex Industries");
+
+        long associateId = idOf(mockMvc.perform(get("/api/me").session(associate))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString());
+
+        // The happy path: raised, pinned to Acme, left for the delivery team.
+        long taskId = createTask(client, """
+                {"title":"Client raised request","description":"Please review our renewal terms.",
+                 "priority":"URGENT"}""");
+        mockMvc.perform(get("/api/task/" + taskId).session(client))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.task.client.name").value("Acme Corporation"))
+                .andExpect(jsonPath("$.data.task.assignedTo").value(nullValue()))
+                .andExpect(jsonPath("$.data.task.status").value("OPEN"))
+                .andExpect(jsonPath("$.data.task.priority").value("URGENT"));
+
+        // Picking an assignee is refused outright rather than silently dropped.
+        mockMvc.perform(post("/api/task")
+                        .session(client)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"Client tries to assign","priority":"NORMAL","assignedToId":%d}"""
+                                .formatted(associateId)))
+                .andExpect(status().isForbidden());
+
+        // So is filing against another customer, including its own id spelled out.
+        mockMvc.perform(post("/api/task")
+                        .session(client)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"Client targets a rival","priority":"NORMAL","clientId":%d}"""
+                                .formatted(globexId)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/task")
+                        .session(client)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"Client targets itself","priority":"NORMAL","clientId":%d}"""
+                                .formatted(acmeId)))
+                .andExpect(status().isCreated());
+
+        // The other roles are unchanged: associates and coordinators still cannot originate work.
+        mockMvc.perform(post("/api/task")
+                        .session(associate)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"Associate tries to originate","priority":"NORMAL"}"""))
+                .andExpect(status().isForbidden());
     }
 }

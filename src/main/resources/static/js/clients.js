@@ -49,7 +49,9 @@ function render(clients) {
 
 function renderRow(client) {
     return '<tr>'
-        + '<td class="cell-title">' + App.esc(client.name) + '</td>'
+        /* The name is the way into the Client Details page from here. */
+        + '<td class="cell-title"><a class="client-link" href="' + App.clientDetailUrl(client.id) + '">'
+        + App.esc(client.name) + '</a></td>'
         + '<td>' + valueOrDash(client.contactName) + '</td>'
         + '<td>' + valueOrDash(client.email) + '</td>'
         + '<td>' + valueOrDash(client.phone) + '</td>'

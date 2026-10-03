@@ -14,9 +14,13 @@ async function load() {
     const table = App.$('#mine-table');
     const tbody = App.$('#mine-body');
     tbody.addEventListener('click', (event) => {
+        /* A client name in the row is its own link; don't fight it. */
+        if (event.target.closest('a')) {
+            return;
+        }
         const row = event.target.closest('tr[data-task-id]');
         if (row) {
-            window.location.href = '/task-detail.html?id=' + encodeURIComponent(row.dataset.taskId);
+            window.location.href = App.taskDetailUrl(row.dataset.taskId);
         }
     });
 

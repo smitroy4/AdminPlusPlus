@@ -17,9 +17,22 @@ const Auth = (function () {
         return !!currentUser && currentUser.role === 'ADMIN';
     }
 
+    function isCoordinatorOrAbove() {
+        return !!currentUser && ['COORDINATOR', 'MANAGER', 'ADMIN'].indexOf(currentUser.role) !== -1;
+    }
+
     /** External customer accounts: scoped to their own customer's tasks. */
     function isClient() {
         return !!currentUser && currentUser.role === 'CLIENT';
+    }
+
+    /**
+     * The customer a CLIENT account belongs to, or null for staff.
+     * Lets the browser build the "My Company" link without a second round trip;
+     * the API still decides what that customer may read.
+     */
+    function currentUserClientId() {
+        return currentUser ? currentUser.clientId : null;
     }
 
     /** @returns the signed-in user or null; never throws. */
@@ -89,7 +102,13 @@ const Auth = (function () {
         });
     }
 
-    /** Shows manager/admin-only nav entries. Call after renderHeader. */
+    /**
+     * Shows manager/admin-only nav entries. Call after renderHeader.
+     *
+     * <p>Three declarative attributes drive visibility:
+     * {@code data-role="MANAGER"|"ADMIN"} (revealed, never hidden), plus the two
+     * exclusions — {@code data-hide-when-client} and {@code data-hide-when-admin}.
+     */
     function applyRoleVisibility() {
         if (isManagerOrAbove()) {
             App.$$('[data-role="MANAGER"]').forEach((node) => node.classList.remove('is-hidden'));
@@ -102,6 +121,14 @@ const Auth = (function () {
         /* Clients are never assigned anything, so "My Tasks" is noise for them. */
         if (isClient()) {
             App.$$('[data-hide-when-client]').forEach((node) => node.classList.add('is-hidden'));
+        }
+        /* Admins hold no assignments, so their personal counters are always zero. */
+        if (isAdmin()) {
+            App.$$('[data-hide-when-admin]').forEach((node) => node.classList.add('is-hidden'));
+        }
+        /* Customer-only entry points (the client's own company record). */
+        if (isClient()) {
+            App.$$('[data-client-only]').forEach((node) => node.classList.remove('is-hidden'));
         }
     }
 
@@ -315,8 +342,10 @@ const Auth = (function () {
         renderHeader,
         highlightNav,
         isManagerOrAbove,
+        isCoordinatorOrAbove,
         isAdmin,
         isClient,
+        currentUserClientId,
         hide,
         show,
         wireLogout

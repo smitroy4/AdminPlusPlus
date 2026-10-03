@@ -80,9 +80,14 @@ public class TaskController {
                 .body(ApiResponse.ok("Escalation message posted", message));
     }
 
-    /** Managers and admins only - coordinators and associates cannot raise tasks. */
+    /**
+     * Raises a task. MANAGER / ADMIN may pick the customer and an assignee; a
+     * CLIENT may file against its own customer only and never assigns an agent
+     * (the service rejects both). Associates and coordinators are excluded here
+     * as well as in the service.
+     */
     @PostMapping
-    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN', 'CLIENT')")
     public ResponseEntity<ApiResponse<TaskDto>> createTask(@Valid @RequestBody CreateTaskRequest request) {
         TaskDto created = taskService.createTask(request);
         URI location = ServletUriComponentsBuilder.fromCurrentRequest()

@@ -65,6 +65,21 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
             """)
     List<Task> findRecentTasksAssignedTo(@Param("userId") Long userId, @Param("since") Instant since);
 
+    /**
+     * Most recently touched tasks in the given statuses for a set of assignees —
+     * one query behind the Managers / Coordinators / Associates sheets, so the
+     * "current task" of each member is the newest row of their group.
+     */
+    @EntityGraph(attributePaths = {"assignedTo", "createdBy", "client"})
+    @Query("""
+            select t from Task t
+            where t.assignedTo.id in :assigneeIds and t.status in :statuses
+            order by t.updatedAt desc
+            """)
+    List<Task> findByAssignedToIdInAndStatusInOrderByUpdatedAtDesc(
+            @Param("assigneeIds") Collection<Long> assigneeIds,
+            @Param("statuses") Collection<TaskStatus> statuses);
+
     // ---------------------------------------------------------- customer work
 
     /**
