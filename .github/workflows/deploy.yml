@@ -1,0 +1,62 @@
+name: Build and Deploy Admin++
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  IMAGE_NAME: ghcr.io/smitroy4/adminplusplus
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to OCI
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: ${{ secrets.OCI_USER }}
+          key: ${{ secrets.OCI_SSH_KEY }}
+          script: |
+            docker pull ghcr.io/smitroy4/adminplusplus:latest
+
+            docker rm -f admin-plus-plus || true
+
+            docker run -d \
+              --name admin-plus-plus \
+              --restart unless-stopped \
+              --env-file /opt/admin-plus-plus/.env \
+              -p 127.0.0.1:8080:8080 \
+              ghcr.io/smitroy4/adminplusplus:latest
+
+            docker image prune -f
