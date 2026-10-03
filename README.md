@@ -50,16 +50,24 @@ Seeding can be turned off with `app.seed.enabled=false`.
 
 ### Point it at your own database
 
-Every datasource value is overridable through an environment variable, so the
-checked-in defaults never have to change:
+No credentials are checked in. The datasource is read from
+`TASKPORTAL_DB_URL`, `TASKPORTAL_DB_USERNAME` and `TASKPORTAL_DB_PASSWORD`,
+which Spring resolves from real environment variables **or** from the
+git-ignored `.env` file in the project root (imported automatically by
+`application.yml`):
 
 ```bash
-export TASKPORTAL_DB_URL=jdbc:postgresql://localhost:5432/taskportal_db
-export TASKPORTAL_DB_USERNAME=postgres
-export TASKPORTAL_DB_PASSWORD=secret
-export TASKPORTAL_PORT=8080
+# .env  (create it next to pom.xml - it is ignored by git and .dockerignore)
+TASKPORTAL_DB_URL=jdbc:postgresql://localhost:5432/taskportal_db
+TASKPORTAL_DB_USERNAME=postgres
+TASKPORTAL_DB_PASSWORD=secret
+TASKPORTAL_PORT=8080
+
 .\mvnw.cmd spring-boot:run
 ```
+
+Real environment variables always win over `.env`, so in Docker/CI pass them
+directly (`docker run --env-file .env ...` or your orchestrator's secret store).
 
 To use a local database, create it first:
 
@@ -380,9 +388,9 @@ answers `400` for an illegal jump such as `OPEN → COMPLETED`. Move through
 
 | Property                | Default (env var override)                        |
 |-------------------------|----------------------------------------------------|
-| `spring.datasource.url`         | Neon pooled endpoint (`TASKPORTAL_DB_URL`)           |
-| `spring.datasource.username`    | `taskportal-db_owner` (`TASKPORTAL_DB_USERNAME`)     |
-| `spring.datasource.password`    | Neon key (`TASKPORTAL_DB_PASSWORD`)                 |
+| `spring.datasource.url`         | from `.env` / `TASKPORTAL_DB_URL` (required)         |
+| `spring.datasource.username`    | from `.env` / `TASKPORTAL_DB_USERNAME` (required)    |
+| `spring.datasource.password`    | from `.env` / `TASKPORTAL_DB_PASSWORD` (required)    |
 | `spring.jpa.hibernate.ddl-auto` | `create` (drop + recreate on every start)           |
 | `spring.jpa.open-in-view`       | `false`                                             |
 | `server.port`                   | `8080` (`TASKPORTAL_PORT`)                          |
@@ -392,9 +400,9 @@ answers `400` for an illegal jump such as `OPEN → COMPLETED`. Move through
 | `app.seed.coordinator-password` | `Coordinator@12345` (`TASKPORTAL_COORDINATOR_PASSWORD`) |
 | `app.seed.client-password`      | `Client@12345` (`TASKPORTAL_CLIENT_PASSWORD`)       |
 
-> The checked-in datasource defaults are the development credentials supplied for
-> this project. Rotate them and pass real values through environment variables for
-> any shared or deployed environment.
+> Database credentials live only in the git-ignored `.env` (local dev) or in
+> real environment variables. Never commit them or bake them into an image;
+> rotate the existing Neon key since it was previously committed.
 
 ---
 

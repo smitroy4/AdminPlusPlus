@@ -4,6 +4,9 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 
+# Local secrets - never commit
+.env
+
 ### STS ###
 .apt_generated
 .classpath

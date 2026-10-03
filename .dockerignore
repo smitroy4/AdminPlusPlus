@@ -1,0 +1,15 @@
+.git
+.github
+.idea
+.vscode
+.opencode
+
+target
+*.iml
+
+README.md
+HELP.md
+mvnw.cmd
+.gitattributes
+
+*.log

@@ -1,17 +1,22 @@
 # ---------------------------------------------------------------------------
 # TaskPortal - application configuration
 #
-# Every DB value can be overridden with an environment variable so the same
-# build works against local PostgreSQL, Neon (default) or any other instance.
+# No credentials live in this file. Datasource values must come from the
+# environment (TASKPORTAL_DB_URL / TASKPORTAL_DB_USERNAME / TASKPORTAL_DB_PASSWORD)
+# or from the local .env file imported below (git-ignored, dev convenience).
+# Real environment variables always win over .env - that is what Docker uses.
 # ---------------------------------------------------------------------------
 spring:
+  config:
+    import: optional:file:.env[.properties]
+
   application:
     name: taskportal
 
   datasource:
-    url: ${TASKPORTAL_DB_URL:jdbc:postgresql://ep-damp-feather-b3d0b8gn-pooler.c-4.ap-southeast-1.aws.neon.tech/taskportal-db?sslmode=require}
-    username: ${TASKPORTAL_DB_USERNAME:taskportal-db_owner}
-    password: ${TASKPORTAL_DB_PASSWORD:npg_DwFsrQkJK1l7}
+    url: ${TASKPORTAL_DB_URL}
+    username: ${TASKPORTAL_DB_USERNAME}
+    password: ${TASKPORTAL_DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
       pool-name: taskportal-pool
