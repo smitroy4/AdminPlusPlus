@@ -4,7 +4,7 @@
    ========================================================================== */
 'use strict';
 
-const PRIORITY_ORDER = { URGENT: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
+const PRIORITY_ORDER = { URGENT: 2, NORMAL: 1 };
 const STATUS_ORDER = { OPEN: 4, IN_PROGRESS: 3, COMPLETED: 2, CLOSED: 1 };
 
 const filters = { text: '', client: '', agent: '', status: '' };
@@ -14,23 +14,28 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function load() {
+    const table = App.$('#all-tasks-table');
     const tbody = App.$('#all-tasks-body');
+    const isClient = Auth.isClient();
     wireRowClicks(tbody);
 
     try {
         const [tasks, clients] = await Promise.all([
             App.getJson('/api/tasks/all'),
-            App.getJson('/api/clients').catch(() => ({ data: [] }))
+            /* A client has no use for a list of other customers, so the
+               picker stays out of the way entirely. */
+            isClient ? Promise.resolve({ data: [] })
+                     : App.getJson('/api/clients').catch(() => ({ data: [] }))
         ]);
         const rows = tasks.data;
 
-        fillClientFilter(clients.data || [], rows);
+        fillClientFilter(clients.data || [], rows, isClient);
         fillAgentFilter(rows);
 
-        const sortable = App.makeSortable(App.$('#all-tasks-table'), rows,
+        const sortable = App.makeSortable(table, rows,
             (sorted) => {
                 const visible = sorted.filter(matches);
-                tbody.innerHTML = renderRows(visible);
+                tbody.innerHTML = renderRows(visible, App.columnCount(table));
                 setCount(visible.length, rows.length);
             },
             accessors(), 'createdAt', 'desc');
@@ -38,7 +43,7 @@ async function load() {
 
         wireFilters();
     } catch (error) {
-        tbody.innerHTML = '<tr><td colspan="8">'
+        tbody.innerHTML = '<tr><td colspan="' + App.columnCount(table) + '">'
             + App.emptyState('Could not load the backlog', error.message) + '</td></tr>';
     }
 }
@@ -76,7 +81,16 @@ function matches(task) {
     return true;
 }
 
-function fillClientFilter(clients, rows) {
+function fillClientFilter(clients, rows, isClient) {
+    const row = App.$('#filters-row');
+    if (isClient) {
+        /* The field is already `is-hidden`, so the 5-track inline grid needs
+           one track less or the Clear button lands in a dead column. */
+        if (row) {
+            row.style.gridTemplateColumns = '2fr 1fr 1fr auto';
+        }
+        return;
+    }
     const select = App.$('#filter-client');
     if (!select || !clients.length) {
         return;
@@ -153,29 +167,36 @@ const SORT_CONFIG = {
     priority: (task) => PRIORITY_ORDER[task.priority] || 0,
     assignedTo: (task) => (task.assignedTo ? task.assignedTo.username : '~unassigned'),
     createdBy: (task) => (task.createdBy ? task.createdBy.username : '~unassigned'),
-    createdAt: (task) => new Date(task.createdAt).getTime() || 0
+    createdAt: (task) => new Date(task.createdAt).getTime() || 0,
+    updatedAt: (task) => new Date(task.updatedAt).getTime() || 0
 };
 
 function accessors() {
     return SORT_CONFIG;
 }
 
-function renderRows(tasks) {
+function renderRows(tasks, columns) {
     if (!tasks.length) {
-        return '<tr><td colspan="8">'
+        return '<tr><td colspan="' + (columns || 9) + '">'
             + App.emptyState('No tasks match', 'Adjust the filters above to widen the search.')
             + '</td></tr>';
     }
+    /* The Client column is dropped for client accounts — every row on this
+       page already belongs to their own customer. */
+    const showClient = !Auth.isClient();
     return tasks.map((task) =>
         '<tr class="is-clickable" data-task-id="' + App.esc(task.id) + '" tabindex="0">'
         + '<td class="cell-taskno">' + App.esc(task.taskNo) + '</td>'
         + '<td class="cell-title">' + App.esc(task.title) + '</td>'
-        + '<td>' + App.clientCell(task.client) + '</td>'
+        + (showClient ? '<td>' + App.clientCell(task.client) + '</td>' : '')
         + '<td>' + App.statusBadge(task.status) + '</td>'
         + '<td>' + App.priorityBadge(task.priority) + '</td>'
         + '<td>' + App.userCell(task.assignedTo) + '</td>'
         + '<td>' + App.userCell(task.createdBy) + '</td>'
-        + '<td class="cell-date">' + App.esc(App.formatDate(task.createdAt)) + '</td>'
+        + '<td class="cell-date" title="' + App.esc(App.formatDate(task.createdAt)) + '">'
+        + App.esc(App.formatDate(task.createdAt)) + '</td>'
+        + '<td class="cell-date" title="' + App.esc(App.formatDate(task.updatedAt)) + '">'
+        + App.esc(App.formatDate(task.updatedAt)) + '</td>'
         + '</tr>').join('');
 }
 

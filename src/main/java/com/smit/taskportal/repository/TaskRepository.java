@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -54,6 +55,31 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     @EntityGraph(attributePaths = {"assignedTo", "createdBy", "client"})
     @Query("select t from Task t where t.createdBy.id = :userId or t.assignedTo.id = :userId")
     List<Task> findByUserId(@Param("userId") Long userId);
+
+    /** Tasks recently touched for a given assignee — feeds the "assigned" notifications. */
+    @EntityGraph(attributePaths = {"assignedTo", "createdBy", "client"})
+    @Query("""
+            select t from Task t
+            where t.assignedTo.id = :userId and t.updatedAt >= :since
+            order by t.updatedAt desc
+            """)
+    List<Task> findRecentTasksAssignedTo(@Param("userId") Long userId, @Param("since") Instant since);
+
+    // ---------------------------------------------------------- customer work
+
+    /**
+     * Client accounts are never the assignee, so their "my work" counters and
+     * tables are keyed on the customer instead.
+     */
+    @EntityGraph(attributePaths = {"assignedTo", "createdBy", "client"})
+    List<Task> findByClientId(Long clientId);
+
+    @EntityGraph(attributePaths = {"assignedTo", "createdBy", "client"})
+    List<Task> findByClientIdAndStatusIn(Long clientId, Collection<TaskStatus> statuses);
+
+    long countByClientId(Long clientId);
+
+    long countByClientIdAndStatusIn(Long clientId, Collection<TaskStatus> statuses);
 
     // --------------------------------------------------------------- counters
 

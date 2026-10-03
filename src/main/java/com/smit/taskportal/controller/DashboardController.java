@@ -31,10 +31,10 @@ public class DashboardController {
         return ApiResponse.ok(taskService.getDashboardStats());
     }
 
-    /** Everything currently assigned to me and not finished yet. */
+    /** Active tasks "mine": assigned to me, or for client accounts of my customer. */
     @GetMapping("/tasks/my-open")
     public ApiResponse<List<TaskDto>> myOpenTasks() {
-        return ApiResponse.ok(taskService.getTasksByAssignedUser(userService.getCurrentUser(), true));
+        return ApiResponse.ok(taskService.getMyOpenTasks());
     }
 
     /** Everything I raised and not finished yet. */

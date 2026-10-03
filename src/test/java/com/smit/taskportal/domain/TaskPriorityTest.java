@@ -8,15 +8,14 @@ class TaskPriorityTest {
 
     @Test
     void weightReflectsUrgency() {
-        assertThat(TaskPriority.LOW.getWeight()).isLessThan(TaskPriority.MEDIUM.getWeight());
-        assertThat(TaskPriority.MEDIUM.getWeight()).isLessThan(TaskPriority.HIGH.getWeight());
-        assertThat(TaskPriority.HIGH.getWeight()).isLessThan(TaskPriority.URGENT.getWeight());
+        assertThat(TaskPriority.NORMAL.getWeight()).isLessThan(TaskPriority.URGENT.getWeight());
+        assertThat(TaskPriority.values()).hasSize(2);
     }
 
     @Test
     void isAtLeastIsInclusive() {
-        assertThat(TaskPriority.HIGH.isAtLeast(TaskPriority.HIGH)).isTrue();
-        assertThat(TaskPriority.HIGH.isAtLeast(TaskPriority.MEDIUM)).isTrue();
-        assertThat(TaskPriority.MEDIUM.isAtLeast(TaskPriority.URGENT)).isFalse();
+        assertThat(TaskPriority.URGENT.isAtLeast(TaskPriority.URGENT)).isTrue();
+        assertThat(TaskPriority.NORMAL.isAtLeast(TaskPriority.NORMAL)).isTrue();
+        assertThat(TaskPriority.NORMAL.isAtLeast(TaskPriority.URGENT)).isFalse();
     }
 }

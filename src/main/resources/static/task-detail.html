@@ -19,7 +19,7 @@
 
         <nav class="nav" aria-label="Main navigation">
             <a class="nav__link" href="/dashboard.html">Dashboard</a>
-            <a class="nav__link" href="/my-tasks.html">My Tasks</a>
+            <a class="nav__link" href="/my-tasks.html" data-hide-when-client>My Tasks</a>
             <a class="nav__link" href="/all-tasks.html">All Tasks</a>
             <a class="nav__link" href="/profile.html">Profile</a>
             <a class="nav__link is-hidden" data-role="ADMIN" href="/users.html">Users</a>
@@ -53,6 +53,7 @@
                 <div class="detail-head__badges">
                     <span id="detail-status-badge"></span>
                     <span id="detail-priority-badge"></span>
+                    <span id="detail-escalated-badge" class="badge badge--escalated is-hidden">Escalated</span>
                 </div>
             </div>
         </div>
@@ -169,9 +170,13 @@
                         </div>
 
                         <div class="composer__foot">
-                            <label class="checkbox">
+                            <label class="checkbox is-hidden" id="message-internal-wrap">
                                 <input type="checkbox" id="message-internal">
                                 <span>Internal note <span class="muted">(visible to managers and admins only)</span></span>
+                            </label>
+                            <label class="checkbox is-hidden" id="message-escalate-wrap">
+                                <input type="checkbox" id="message-escalate">
+                                <span>Escalate to Manager <span class="muted">(visible to managers and admins only)</span></span>
                             </label>
                             <button type="submit" class="btn" id="message-submit">Post message</button>
                         </div>
@@ -179,10 +184,29 @@
                 </div>
             </div>
         </section>
+
+        <!-- ---------------------------------- escalation: client <-> managers -->
+        <section class="section is-hidden" id="escalation-section" aria-label="Escalation conversation">
+            <div class="section__head">
+                <h2 id="escalation-title">Escalation conversation</h2>
+                <span class="section__hint" id="escalation-count"></span>
+            </div>
+            <div class="card">
+                <div class="card__body">
+                    <p class="muted" id="escalation-intro" style="margin-top:0">
+                        Private thread between the escalating client, managers and admins.
+                    </p>
+
+                    <div class="thread" id="escalation-thread">
+                        <div class="thread__empty">No escalation messages yet.</div>
+                    </div>
+                </div>
+            </div>
+        </section>
     </div>
 </main>
 
-<footer class="app-foot">Admin++ &middot; Spring Boot + vanilla JS</footer>
+<footer class="app-foot">Admin++ | Logged in as <span data-auth-footer-user>&hellip;</span></footer>
 
 <script src="/js/app.js"></script>
 <script src="/js/auth.js"></script>

@@ -66,6 +66,15 @@ public class TaskMessage {
     @Column(name = "is_internal", nullable = false)
     private boolean internal = false;
 
+    /**
+     * Part of the "escalate to manager" conversation raised by a client.
+     * Escalation messages never appear in the regular thread — they are only
+     * exposed to managers/admins and the client who escalated the task.
+     */
+    @Builder.Default
+    @Column(name = "is_escalation", nullable = false)
+    private boolean escalation = false;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

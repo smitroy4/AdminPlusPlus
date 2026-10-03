@@ -87,6 +87,19 @@ public class TaskService {
         return sortForDisplay(tasks);
     }
 
+    /**
+     * The dashboard's "My open tasks" list: active tasks assigned to the
+     * caller, or — for client accounts, who are never assignees — the active
+     * tasks of their own customer.
+     */
+    public List<TaskDto> getMyOpenTasks() {
+        AppUserPrincipal actor = currentUser.require();
+        if (isClientWithCustomer(actor)) {
+            return sortForDisplay(taskRepository.findByClientIdAndStatusIn(actor.clientId(), ACTIVE_STATUSES));
+        }
+        return sortForDisplay(taskRepository.findByAssignedToAndStatusIn(getUser(actor.id()), ACTIVE_STATUSES));
+    }
+
     public List<TaskDto> getTasksByCreator(User user, boolean activeOnly) {
         List<Task> tasks = activeOnly
                 ? taskRepository.findByCreatedByIdAndStatusIn(user.getId(), ACTIVE_STATUSES)
@@ -286,10 +299,24 @@ public class TaskService {
         boolean canViewTeam = actor.role().isCoordinatorOrAbove();
         boolean canViewAll = actor.role().isManagerOrAbove();
 
-        long myOpen = taskRepository.countByAssignedToIdAndStatusIn(actor.id(), List.of(TaskStatus.OPEN));
-        long myInProgress = taskRepository.countByAssignedToIdAndStatusIn(actor.id(), List.of(TaskStatus.IN_PROGRESS));
-        long myCompleted = taskRepository.countByAssignedToIdAndStatusIn(actor.id(), List.of(TaskStatus.COMPLETED));
-        long myTotal = taskRepository.countByAssignedToId(actor.id());
+        /* "My work" is assignment-based — except for client accounts, which are
+           never assignees and therefore count their own customer's tasks. */
+        long myOpen;
+        long myInProgress;
+        long myCompleted;
+        long myTotal;
+        if (isClientWithCustomer(actor)) {
+            Long clientId = actor.clientId();
+            myOpen = taskRepository.countByClientIdAndStatusIn(clientId, List.of(TaskStatus.OPEN));
+            myInProgress = taskRepository.countByClientIdAndStatusIn(clientId, List.of(TaskStatus.IN_PROGRESS));
+            myCompleted = taskRepository.countByClientIdAndStatusIn(clientId, List.of(TaskStatus.COMPLETED));
+            myTotal = taskRepository.countByClientId(clientId);
+        } else {
+            myOpen = taskRepository.countByAssignedToIdAndStatusIn(actor.id(), List.of(TaskStatus.OPEN));
+            myInProgress = taskRepository.countByAssignedToIdAndStatusIn(actor.id(), List.of(TaskStatus.IN_PROGRESS));
+            myCompleted = taskRepository.countByAssignedToIdAndStatusIn(actor.id(), List.of(TaskStatus.COMPLETED));
+            myTotal = taskRepository.countByAssignedToId(actor.id());
+        }
 
         long teamOpen = 0;
         long teamInProgress = 0;
@@ -337,7 +364,9 @@ public class TaskService {
                 byPriority.add(DashboardStatsDto.priorityBucket(priority, priorityCounts.getOrDefault(priority, 0L)));
             }
         } else {
-            List<Task> myTasks = taskRepository.findByUserId(actor.id());
+            List<Task> myTasks = isClientWithCustomer(actor)
+                    ? taskRepository.findByClientId(actor.clientId())
+                    : taskRepository.findByUserId(actor.id());
             Map<TaskStatus, Long> myStatusCounts = new EnumMap<>(TaskStatus.class);
             Map<TaskPriority, Long> myPriorityCounts = new EnumMap<>(TaskPriority.class);
             for (Task task : myTasks) {
@@ -371,6 +400,11 @@ public class TaskService {
             return true;
         }
         return task.getAssignedTo() != null && task.getAssignedTo().getId().equals(actor.id());
+    }
+
+    /** {@code true} for a CLIENT account that is actually linked to a customer. */
+    private static boolean isClientWithCustomer(AppUserPrincipal actor) {
+        return actor.isClient() && actor.clientId() != null;
     }
 
     private static void requireManagerOrOwner(AppUserPrincipal actor, Task task, String action) {

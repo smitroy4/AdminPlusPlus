@@ -10,6 +10,7 @@ public record TaskMessageDto(Long id,
                              UserSummaryDto fromUser,
                              String messageBody,
                              boolean internal,
+                             boolean escalation,
                              Instant createdAt) {
 
     public static TaskMessageDto from(TaskMessage message) {
@@ -19,6 +20,7 @@ public record TaskMessageDto(Long id,
                 UserSummaryDto.from(message.getFromUser()),
                 message.getMessageBody(),
                 message.isInternal(),
+                message.isEscalation(),
                 message.getCreatedAt());
     }
 }

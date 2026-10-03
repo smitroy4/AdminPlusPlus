@@ -19,7 +19,7 @@
 
         <nav class="nav" aria-label="Main navigation">
             <a class="nav__link" href="/dashboard.html">Dashboard</a>
-            <a class="nav__link" href="/my-tasks.html">My Tasks</a>
+            <a class="nav__link" href="/my-tasks.html" data-hide-when-client>My Tasks</a>
             <a class="nav__link" href="/all-tasks.html">All Tasks</a>
             <a class="nav__link" href="/profile.html">Profile</a>
             <a class="nav__link is-hidden" data-role="ADMIN" href="/users.html">Users</a>
@@ -67,7 +67,7 @@
                 <div class="tile__value" id="tile-my-completed">–</div>
             </div>
             <div class="tile tile--total">
-                <div class="tile__label">Total assigned</div>
+                <div class="tile__label" id="tile-my-total-label">Total assigned</div>
                 <div class="tile__value" id="tile-my-total">–</div>
             </div>
         </div>
@@ -135,8 +135,8 @@
                         <th data-sort-key="status">Status<span class="sort-caret">▲</span></th>
                         <th data-sort-key="priority">Priority<span class="sort-caret">▲</span></th>
                         <th data-sort-key="assignedTo">Assigned to<span class="sort-caret">▲</span></th>
-                        <th data-sort-key="client">Client<span class="sort-caret">▲</span></th>
-                        <th data-sort-key="createdAt">Created<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="client" data-hide-when-client>Client<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="updatedAt">Last updated<span class="sort-caret">▲</span></th>
                     </tr>
                     </thead>
                     <tbody id="my-tasks-body">
@@ -148,7 +148,10 @@
     </section>
 
     <!-- ------------------------------------------- all-open backlog, all roles -->
-    <section class="section" id="all-tasks-section" aria-label="All open tasks">
+    <!-- Clients only ever have their own customer's work: the shared backlog
+         below is noise for them, so the whole section is dropped. -->
+    <section class="section" id="all-tasks-section" aria-label="All open tasks"
+             data-hide-when-client>
         <div class="section__head">
             <h2>All open tasks</h2>
             <span class="section__hint" id="all-tasks-count">…</span>
@@ -163,9 +166,9 @@
                         <th data-sort-key="status">Status<span class="sort-caret">▲</span></th>
                         <th data-sort-key="priority">Priority<span class="sort-caret">▲</span></th>
                         <th data-sort-key="assignedTo">Assigned to<span class="sort-caret">▲</span></th>
-                        <th data-sort-key="client">Client<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="client" data-hide-when-client>Client<span class="sort-caret">▲</span></th>
                         <th data-sort-key="createdBy">Created by<span class="sort-caret">▲</span></th>
-                        <th data-sort-key="createdAt">Created<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="updatedAt">Last updated<span class="sort-caret">▲</span></th>
                     </tr>
                     </thead>
                     <tbody id="all-tasks-body">
@@ -195,7 +198,7 @@
     </section>
 </main>
 
-<footer class="app-foot">Admin++ &middot; Spring Boot + vanilla JS</footer>
+<footer class="app-foot">Admin++ | Logged in as <span data-auth-footer-user>&hellip;</span></footer>
 
 <!-- ------------------------------------------------------- create dialog -->
 <div class="modal" id="create-task-modal" role="dialog" aria-modal="true" aria-labelledby="create-task-heading">
@@ -225,9 +228,7 @@
                     <div class="field">
                         <label class="label" for="task-priority">Priority <span class="req">*</span></label>
                         <select class="select" id="task-priority">
-                            <option value="LOW">Low</option>
-                            <option value="MEDIUM" selected>Medium</option>
-                            <option value="HIGH">High</option>
+                            <option value="NORMAL" selected>Normal</option>
                             <option value="URGENT">Urgent</option>
                         </select>
                     </div>

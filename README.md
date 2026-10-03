@@ -7,6 +7,10 @@ comment threading and role-based access control.
 * **Database** — PostgreSQL (Neon by default, local Postgres works too)
 * **Frontend** — vanilla HTML / CSS / JavaScript. No frameworks, no bundler, no npm.
 
+**Deployed** to an Oracle Cloud VM — Canonical Ubuntu 24.04, 1 OCPU, 1 GB RAM —
+available at <https://adminpp.smitroy.com>. Pushes to `main` build a Docker
+image (GHCR) and roll it out over SSH by `.github/workflows/deploy.yml`.
+
 ---
 
 ## 1. Quick start
@@ -93,7 +97,7 @@ src/main/java/com/smit/taskportal
 │   ├── ApiResponse           { success, message, data }
 │   ├── TaskDto, TaskDetailDto, TaskMessageDto
 │   ├── UserDto, UserSummaryDto, ClientDto, ClientSummaryDto
-│   ├── DashboardStatsDto, CsrfDto
+│   ├── DashboardStatsDto, CsrfDto, NotificationDto
 │   └── *Request              Validated inbound payloads
 ├── bootstrap/
 │   └── DataInitializer        Seeds the demo accounts and sample tasks
@@ -103,8 +107,9 @@ src/main/java/com/smit/taskportal
 ├── controller/
 │   ├── AuthController         /api/me, /api/csrf, /api/auth/change-password
 │   ├── DashboardController    /api/dashboard/*, /api/tasks/*
-│   ├── TaskController         /api/task/{id}, POST /api/task, PATCH …/status
+│   ├── TaskController         /api/task/{id}, POST /api/task, PATCH …/status, POST …/escalate
 │   ├── TaskMessageController  /api/task/{id}/message[s]
+│   ├── NotificationController /api/notifications (navbar bell feed)
 │   ├── ClientController       /api/clients[/id] (details: MANAGER, ADMIN)
 │   ├── ManagerController      /api/manager/**   (MANAGER, ADMIN)
 │   └── AdminUserController    /api/admin/**     (ADMIN)
@@ -119,7 +124,7 @@ src/main/java/com/smit/taskportal
 │   ├── AppUserPrincipal       record implementing UserDetails
 │   ├── CurrentUserHolder      resolves the principal from the security context
 │   └── RestAware{AuthenticationEntryPoint,AccessDeniedHandler}
-└── service/                   UserService, TaskService, TaskMessageService, ClientService, TaskNoGenerator
+└── service/                   UserService, TaskService, TaskMessageService, ClientService, NotificationService, TaskNoGenerator
 
 src/main/resources
 ├── application.yml
@@ -129,14 +134,14 @@ src/main/resources
     ├── dashboard.html         stats, my open tasks, shared open backlog
     ├── my-tasks.html          everything assigned to me, any status
     ├── all-tasks.html         full backlog: sort any column, filter client/agent/status
-    ├── task-detail.html       header, status/assign controls, message thread
+    ├── task-detail.html       header, status/assign controls, thread, then escalation
     ├── profile.html           own details + password change
     ├── users.html             admin-only account management (staff roles only)
     ├── clients.html           manager/admin directory of client companies
     ├── css/style.css          the single stylesheet (light default, dark toggle)
     └── js/
         ├── app.js             fetch + CSRF + escaping + formatting + theme
-        ├── auth.js            page guard, header chrome, logout
+        ├── auth.js            page guard, header chrome, notifications bell, logout
         ├── index.js / login.js / dashboard.js / my-tasks.js / all-tasks.js
         ├── task-detail.js
         ├── profile.js
@@ -156,10 +161,12 @@ username      UQ, NN          task_no       UQ, NN           task_id       FK �
 password      NN (BCrypt)     title         NN               from_user_id  FK → users
 email         UQ, NN          description                    message_body  NN (TEXT)
 role          NN (enum)       status        NN (enum)        is_internal   NN, default false
-client_id     FK → clients    priority      NN (enum)        created_at    NN
+client_id     FK → clients    priority      NN (enum)        is_escalation NN, default false
+                                                             created_at    NN
   (CLIENT accounts only)      assigned_to   FK → users (nullable)
                              client_id     FK → clients (nullable)
                              created_by    FK → users
+                             escalated_by  FK → users (nullable)
                              created_at /  NN
                              updated_at    NN
 
@@ -179,16 +186,17 @@ concurrent task creation can never collide, yielding `TASK-00001`, `TASK-00002`,
 |----------------|-----------------------------------------------------------|
 | `Role`         | `CLIENT`, `ASSOCIATE`, `COORDINATOR`, `MANAGER`, `ADMIN`     |
 | `TaskStatus`   | `OPEN`, `IN_PROGRESS`, `COMPLETED`, `CLOSED`                 |
-| `TaskPriority` | `LOW`, `MEDIUM`, `HIGH`, `URGENT`                            |
+| `TaskPriority` | `NORMAL`, `URGENT`                                        |
 
 Role hierarchy (least to most privileged): `CLIENT` < `ASSOCIATE` <
 `COORDINATOR` < `MANAGER` < `ADMIN`. Coordinators cannot create tasks or reach
 the manager endpoints; they additionally see the workload metrics of every
 `ASSOCIATE`.
 
-`CLIENT` is an external, read-only account: it is linked to one row of
-`clients` and can only ever see that customer's tasks (name of the customer on
-each task; the contact block stays reserved for MANAGER / ADMIN).
+`CLIENT` is an external account: it is linked to one row of `clients`, can only
+ever see that customer's tasks (name of the customer on each task; the contact
+block stays reserved for MANAGER / ADMIN), and may only comment on those tasks —
+never claim, assign or change status.
 
 Allowed transitions:
 
@@ -215,26 +223,28 @@ All responses share one envelope:
 |--------|-----------------------------------|-------------------|--------------------------------------|
 | GET    | `/api/csrf`                       | public            | Issues the CSRF token/cookie          |
 | GET    | `/api/me`                         | authenticated     | Current user                         |
+| GET    | `/api/notifications`              | authenticated     | Activity feed for the navbar bell (role-scoped) |
 | PUT    | `/api/me/profile`                 | authenticated     | Change own email                     |
 | POST   | `/api/auth/change-password`       | authenticated     | Change own password                  |
 | GET    | `/api/dashboard/stats`            | authenticated     | Role-scoped tile counters + breakdowns |
-| GET    | `/api/tasks/my-open`              | authenticated     | Active tasks assigned to me          |
+| GET    | `/api/tasks/my-open`              | authenticated     | Active tasks assigned to me (client: own customer) |
 | GET    | `/api/tasks/my-created`           | authenticated     | Active tasks I raised                |
 | GET    | `/api/tasks/mine`                 | authenticated     | Every task assigned to me            |
 | GET    | `/api/tasks/all-open`             | authenticated     | Active backlog (client: own customer only) |
 | GET    | `/api/tasks/all`                  | authenticated     | Every task, any status (same scoping) |
 | GET    | `/api/tasks/by-status?status=`    | authenticated     | Filter by a single status            |
-| GET    | `/api/task/{id}`                  | owner / assignee / manager | Task + visible thread      |
+| GET    | `/api/task/{id}`                  | owner / assignee / manager | Task + visible thread + escalation conversation (participants) |
 | POST   | `/api/task`                       | MANAGER, ADMIN    | Create a task                        |
 | PUT    | `/api/task/{id}`                  | creator / manager | Replace title, description, priority (`title` required) |
 | PATCH  | `/api/task/{id}/status`           | assignee / creator / manager | Move along the life-cycle |
 | POST   | `/api/task/{id}/assign`           | manager, or self on a free task | Assign            |
 | DELETE | `/api/task/{id}/assign`           | MANAGER, ADMIN    | Release back to the pool             |
 | GET    | `/api/task/{id}/messages`         | owner / assignee / manager | Visible thread               |
-| POST   | `/api/task/{id}/message`          | owner / assignee / manager (not CLIENT) | Post a reply          |
+| POST   | `/api/task/{id}/message`          | owner / assignee / manager / client | Post a reply (client: own customer only, never internal) |
+| POST   | `/api/task/{id}/escalate`         | CLIENT opens, MANAGER / ADMIN reply | Private escalation conversation (201) |
 | DELETE | `/api/task/{id}/message/{mid}`    | author, or ADMIN   | Retract a comment                  |
-| GET    | `/api/clients`                    | authenticated     | Client list (contact block: MANAGER, ADMIN) |
-| GET    | `/api/clients/{id}`               | authenticated     | One client (same detail rule)        |
+| GET    | `/api/clients`                    | authenticated     | Client list (CLIENT: own customer only; contact block: MANAGER, ADMIN) |
+| GET    | `/api/clients/{id}`               | authenticated     | One client (CLIENT: own customer only, else 404; same detail rule) |
 | GET    | `/api/manager/users`              | MANAGER, ADMIN    | Users for the assign dropdown (clients excluded) |
 | GET    | `/api/manager/tasks`              | MANAGER, ADMIN    | Filtered backlog                    |
 | GET    | `/api/admin/users`                | ADMIN             | List accounts                        |
@@ -266,7 +276,7 @@ curl -b cookies.txt -c cookies.txt -X POST http://localhost:8080/login \
 curl -b cookies.txt -X POST http://localhost:8080/api/task \
      -H "Content-Type: application/json" \
      -H "X-XSRF-TOKEN: $CSRF" \
-     -d '{"title":"Ship the MVP","description":"Cut 0.1.0","priority":"HIGH"}'
+     -d '{"title":"Ship the MVP","description":"Cut 0.1.0","priority":"NORMAL"}'
 ```
 
 ---
@@ -292,11 +302,12 @@ curl -b cookies.txt -X POST http://localhost:8080/api/task \
 | Sign in, view own tasks                 | ✅ | ✅ | ✅ | ✅ | ✅ |
 | See the open / all tasks backlog        | own customer's | ✅ | ✅ | ✅ | ✅ |
 | Create a task                           | ❌ | ❌ | ❌ | ✅ | ✅ |
-| Comment on a task you own/are assigned  | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Comment on a task you own/are assigned  | own customer's | ✅ | ✅ | ✅ | ✅ |
 | Claim an unassigned task                | ❌ | ✅ | ✅ | ✅ | ✅ |
 | Assign a task to somebody else          | ❌ | ❌ | ❌ | ✅ | ✅ |
 | Edit title / description / priority     | ❌ | own only | own only | ✅ | ✅ |
 | Post internal notes                     | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Escalate a task to a manager            | ✅ | ❌ | ❌ | reply only | reply only |
 | Unassign a task                         | ❌ | ❌ | ❌ | ✅ | ✅ |
 | See associate workload metrics          | ❌ | ❌ | ✅ | ✅ | ✅ |
 | See client contact details              | ❌ | ❌ | ❌ | ✅ | ✅ |
@@ -304,8 +315,14 @@ curl -b cookies.txt -X POST http://localhost:8080/api/task \
 | Manage accounts                         | ❌ | ❌ | ❌ | ❌ | ✅ |
 
 **Internal notes** are visible to MANAGER and ADMIN, plus their own author.
-**Client accounts** are read-only: they can browse their own customer's tasks
-but never comment, claim, reassign or change status.
+**Client accounts** share the message composer with everybody else but never
+claim, reassign or change status. Their composer carries a single switch instead
+of the staff's *Internal note* one: ticking **Escalate to Manager** routes the
+message into a separate, private conversation (the task is flagged and its
+priority raised to URGENT) that only MANAGER, ADMIN **and the client who
+escalated** can read and reply to; associates and coordinators never see it and
+it never appears in the regular thread. The escalation card on the task page is
+display-only — it renders that conversation once it exists.
 
 ### Metrics visibility
 
@@ -313,11 +330,15 @@ but never comment, claim, reassign or change status.
 
 | Caller      | `myXxx`      | `teamXxx` (associate workload) | `allXxx` (company-wide) | Breakdown charts |
 |-------------|--------------|--------------------------------|-------------------------|------------------|
-| CLIENT      | — (no assigned tasks) | —                      | —                       | —                |
+| CLIENT      | own customer's tasks | —                   | —                       | own customer's tasks |
 | ASSOCIATE   | own tasks    | —                              | —                       | own tasks        |
 | COORDINATOR | own tasks    | every task touching an ASSOCIATE | —                     | associate tasks  |
 | MANAGER     | own tasks    | every task touching an ASSOCIATE | ✅                    | everything       |
 | ADMIN       | own tasks    | every task touching an ASSOCIATE | ✅                    | everything       |
+
+Client accounts are never the assignee, so their `myXxx` counters — and the
+`/api/tasks/my-open` list beneath the tiles — key on `task.client` instead of
+`task.assignedTo`. The total tile is relabelled **Total** for them.
 
 The booleans `canViewTeam` / `canViewAll` in the payload tell the SPA which
 tile groups to render.
@@ -371,12 +392,55 @@ answers `400` for an illegal jump such as `OPEN → COMPLETED`. Move through
   `/clients.html`, the directory of every client company with its contact
   details.
 * Tables are sortable — click a column header to toggle ascending/descending.
+* Priority is deliberately binary: `NORMAL` and `URGENT`. One dropdown in the
+  New-task dialog, two badge styles, two bars in the "Tasks by priority"
+  chart, and `URGENT` is also what an escalation promotes a task to.
+* The dashboard tables end with a **Last updated** column rendered through
+  `App.formatRelative()` — `just now`, `5 minutes ago`, `3 hours ago`,
+  `4 days ago` — with the exact timestamp in the tooltip. `/all-tasks.html`
+  and `/my-tasks.html` instead show the full detail as two columns,
+  **Created** and **Updated**, both absolute. `Task.touch()` is called from
+  `TaskMessageService.addMessage` / `escalate`, so thread activity bumps the
+  clock too (`@UpdateTimestamp` already covers every direct task edit).
 * **All Tasks** (`/all-tasks.html`) lists the full backlog for every role with
   client-side filters (free-text search, client, agent, status) and a sortable
   column per field; rows that fail the filters are hidden, not re-fetched.
-* Client names appear as their own column in the task tables; task detail shows
+  For a client account the **Client** column and the matching filter are both
+  dropped — every row already belongs to their own customer — and the server
+  only ever returns that customer's tasks anyway.
+* Client names appear as their own column in the task tables for staff; the
+  column carries `data-hide-when-client` and is removed for client accounts
+  (the renderers skip the body cell and size their empty state from
+  `App.columnCount()`). Task detail shows
   a **Client details** card (contact, email, phone, notes) that the API only
-  sends to MANAGER / ADMIN. Client sign-ins get a read-only detail page.
+  sends to MANAGER / ADMIN. Client sign-ins get a detail page without the
+  status and assignment controls.
+* The dashboard stacks **My open tasks** over a shared **All open tasks**
+  backlog. The shared section also carries `data-hide-when-client`, so a
+  client only ever sees their own work table plus the tiles.
+* Task detail hosts one shared **Add a message** composer, placed *below* the
+  regular **Conversation** thread so both mediums stay visible at once. The
+  single switch under it is role-dependent: managers/admins get **Internal
+  note**, client accounts get **Escalate to Manager**, and associates and
+  coordinators get no switch at all. Ticking *Escalate to Manager* posts into
+  the private escalation conversation instead of the shared thread. Beneath the
+  composer sits the display-only **Escalation conversation** card, rendered for
+  managers/admins and the escalating client once that conversation exists.
+  Everybody else only sees the orange "Escalated" badge.
+* Every page shares one nav bar. **My Tasks** carries `data-hide-when-client`
+  and is dropped for client accounts (they are never assigned anything); the
+  existing `data-role="MANAGER"` / `data-role="ADMIN"` entries work the same
+  way. All of this is applied by `Auth.applyRoleVisibility()`.
+* The header action row reads **user chip · bell · logout · theme toggle**.
+  The **bell** opens a notifications dropdown fed by `GET /api/notifications` —
+  tasks assigned to you, new thread messages on tasks you own or are assigned
+  (clients: on their customer's tasks) and escalation messages. Unread count
+  lives in `localStorage` (`admin++-notif-read`) keyed by stable ids
+  (`assigned-7`, `message-42`, `escalation-43`), so nothing about read state is
+  stored server side. Clicking an item marks it read and opens the task.
+* The footer on every authenticated page reads
+  `Admin++ | Logged in as <name> (<role>)`, filled from the same
+  `data-auth-footer-user` span by `Auth.renderHeader()`.
 * `App.esc()` / `App.escMultiline()` are mandatory for any server value; this is
   the only XSS defence and it is applied everywhere.
 * Desktop-first (≥1024px), as specified. The layout uses CSS grid/flex so it

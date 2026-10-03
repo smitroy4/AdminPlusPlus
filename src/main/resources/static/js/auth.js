@@ -17,7 +17,7 @@ const Auth = (function () {
         return !!currentUser && currentUser.role === 'ADMIN';
     }
 
-    /** External customer accounts: read-only, scoped to their own tasks. */
+    /** External customer accounts: scoped to their own customer's tasks. */
     function isClient() {
         return !!currentUser && currentUser.role === 'CLIENT';
     }
@@ -40,7 +40,12 @@ const Auth = (function () {
         return currentUser;
     }
 
-    /** Fills the shared header chrome. Safe to call on any authenticated page. */
+    /** The user's role exactly as the header chip shows it. */
+    function roleLabel(me) {
+        return String((me && me.role) || '').replace('_', ' ');
+    }
+
+    /** Fills the shared chrome (header + footer). Safe to call on any authenticated page. */
     function renderHeader(user) {
         const me = user || currentUser;
         if (!me) {
@@ -54,7 +59,7 @@ const Auth = (function () {
 
         const role = App.$('[data-auth-role]');
         if (role) {
-            role.textContent = String(me.role || '').replace('_', ' ');
+            role.textContent = roleLabel(me);
         }
 
         const avatar = App.$('[data-auth-avatar]');
@@ -65,6 +70,11 @@ const Auth = (function () {
         const email = App.$('[data-auth-email]');
         if (email) {
             email.textContent = me.email;
+        }
+
+        const footUser = App.$('[data-auth-footer-user]');
+        if (footUser) {
+            footUser.textContent = me.username + ' (' + roleLabel(me) + ')';
         }
     }
 
@@ -88,6 +98,10 @@ const Auth = (function () {
             App.$$('[data-role="ADMIN"]').forEach((node) => node.classList.remove('is-hidden'));
         } else {
             App.$$('[data-role="ADMIN"]').forEach((node) => node.classList.add('is-hidden'));
+        }
+        /* Clients are never assigned anything, so "My Tasks" is noise for them. */
+        if (isClient()) {
+            App.$$('[data-hide-when-client]').forEach((node) => node.classList.add('is-hidden'));
         }
     }
 
@@ -121,6 +135,158 @@ const Auth = (function () {
         });
     }
 
+    /* ------------------------------------------------------- notifications */
+
+    /* Read state lives in localStorage: ids stay stable across reloads, so the
+       badge is simply "feed ids minus read ids". Never sent to the server. */
+    const NOTIF_READ_KEY = 'admin++-notif-read';
+    let notifItems = [];
+
+    function readNotifSet() {
+        try {
+            const ids = JSON.parse(window.localStorage.getItem(NOTIF_READ_KEY) || '[]');
+            return new Set(Array.isArray(ids) ? ids : []);
+        } catch (error) {
+            return new Set();
+        }
+    }
+
+    function saveNotifSet(ids) {
+        try {
+            window.localStorage.setItem(NOTIF_READ_KEY, JSON.stringify(Array.from(ids).slice(-500)));
+        } catch (error) {
+            /* private mode or quota — the badge just goes stale */
+        }
+    }
+
+    function notifTypeLabel(type) {
+        if (type === 'ASSIGNED') {
+            return 'Assigned';
+        }
+        if (type === 'ESCALATION') {
+            return 'Escalation';
+        }
+        return 'Message';
+    }
+
+    function renderNotifications() {
+        const list = App.$('[data-notif-list]');
+        const badge = App.$('[data-notif-count]');
+        if (!list || !badge) {
+            return;
+        }
+
+        const read = readNotifSet();
+        const unread = notifItems.filter((item) => !read.has(item.id)).length;
+        badge.textContent = String(unread);
+        badge.classList.toggle('is-hidden', unread === 0);
+
+        if (!notifItems.length) {
+            list.innerHTML = '<div class="notif__empty">No notifications yet.</div>';
+            return;
+        }
+
+        list.innerHTML = notifItems.map((item) => {
+            const meta = [item.actor || '', item.createdAt ? App.formatRelative(item.createdAt) : '']
+                .filter(Boolean).join(' · ');
+            const snippet = item.snippet
+                ? '<span class="notif__snippet">' + App.esc(item.snippet) + '</span>'
+                : '';
+            return '<button type="button" class="notif__item'
+                + (read.has(item.id) ? '' : ' notif__item--unread')
+                + '" data-notif-id="' + App.esc(item.id) + '" data-task-id="' + App.esc(item.taskId) + '">'
+                + '<span class="notif__type notif__type--' + App.esc(item.type) + '">'
+                + App.esc(notifTypeLabel(item.type)) + '</span>'
+                + '<span class="notif__body">'
+                + '<span class="notif__task">' + App.esc(item.taskNo) + ' · ' + App.esc(item.taskTitle) + '</span>'
+                + '<span class="notif__summary">' + App.esc(item.summary) + '</span>'
+                + snippet
+                + (meta ? '<span class="notif__meta">' + App.esc(meta) + '</span>' : '')
+                + '</span></button>';
+        }).join('');
+    }
+
+    async function loadNotifications() {
+        try {
+            const response = await App.getJson('/api/notifications');
+            notifItems = Array.isArray(response.data) ? response.data : [];
+        } catch (error) {
+            notifItems = [];
+        }
+        renderNotifications();
+    }
+
+    /** Drops the bell + dropdown in the header, immediately before logout. */
+    function mountNotifications() {
+        const logout = App.$('[data-logout]');
+        if (!logout || document.querySelector('[data-notif-toggle]')) {
+            return;
+        }
+
+        const wrap = document.createElement('div');
+        wrap.className = 'notif';
+        wrap.innerHTML = '<button type="button" class="btn btn--ghost btn--sm notif__btn"'
+            + ' data-notif-toggle aria-haspopup="true" aria-expanded="false" aria-label="Notifications">'
+            + '<span class="notif__bell" aria-hidden="true">&#128276;</span>'
+            + '<span class="notif__count is-hidden" data-notif-count>0</span>'
+            + '</button>'
+            + '<div class="notif__panel is-hidden" data-notif-panel role="region" aria-label="Notifications">'
+            + '<div class="notif__head"><span>Notifications</span>'
+            + '<button type="button" class="notif__mark" data-notif-mark>Mark all read</button></div>'
+            + '<div class="notif__list" data-notif-list>'
+            + '<div class="notif__empty">Loading…</div></div></div>';
+        logout.parentNode.insertBefore(wrap, logout);
+
+        const toggle = wrap.querySelector('[data-notif-toggle]');
+        const panel = wrap.querySelector('[data-notif-panel]');
+
+        function close() {
+            panel.classList.add('is-hidden');
+            toggle.setAttribute('aria-expanded', 'false');
+        }
+
+        toggle.addEventListener('click', (event) => {
+            event.stopPropagation();
+            const willOpen = panel.classList.contains('is-hidden');
+            panel.classList.toggle('is-hidden', !willOpen);
+            toggle.setAttribute('aria-expanded', String(willOpen));
+            if (willOpen) {
+                loadNotifications();
+            }
+        });
+
+        wrap.querySelector('[data-notif-mark]').addEventListener('click', () => {
+            saveNotifSet(new Set(notifItems.map((item) => item.id)));
+            renderNotifications();
+        });
+
+        wrap.querySelector('[data-notif-list]').addEventListener('click', (event) => {
+            const item = event.target.closest('[data-notif-id]');
+            if (!item) {
+                return;
+            }
+            const ids = readNotifSet();
+            ids.add(item.dataset.notifId);
+            saveNotifSet(ids);
+            const taskId = item.dataset.taskId;
+            close();
+            if (taskId) {
+                window.location.href = '/task-detail.html?id=' + encodeURIComponent(taskId);
+            }
+        });
+
+        document.addEventListener('click', (event) => {
+            if (!wrap.contains(event.target)) {
+                close();
+            }
+        });
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                close();
+            }
+        });
+    }
+
     /**
      * Entry point for every authenticated page.
      * @param {Function} [onReady] invoked with the user once the shell is ready
@@ -134,6 +300,8 @@ const Auth = (function () {
         highlightNav();
         applyRoleVisibility();
         wireLogout();
+        mountNotifications();
+        loadNotifications();
         if (typeof onReady === 'function') {
             await onReady(user);
         }

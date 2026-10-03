@@ -19,7 +19,7 @@
 
         <nav class="nav" aria-label="Main navigation">
             <a class="nav__link" href="/dashboard.html">Dashboard</a>
-            <a class="nav__link" href="/my-tasks.html">My Tasks</a>
+            <a class="nav__link" href="/my-tasks.html" data-hide-when-client>My Tasks</a>
             <a class="nav__link" href="/all-tasks.html">All Tasks</a>
             <a class="nav__link" href="/profile.html">Profile</a>
             <a class="nav__link is-hidden" data-role="ADMIN" href="/users.html">Users</a>
@@ -75,7 +75,7 @@
     </div>
 </main>
 
-<footer class="app-foot">Admin++ &middot; Spring Boot + vanilla JS</footer>
+<footer class="app-foot">Admin++ | Logged in as <span data-auth-footer-user>&hellip;</span></footer>
 
 <!-- ------------------------------------------------------- create dialog -->
 <div class="modal" id="create-user-modal" role="dialog" aria-modal="true" aria-labelledby="create-user-heading">

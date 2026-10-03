@@ -19,7 +19,7 @@
 
         <nav class="nav" aria-label="Main navigation">
             <a class="nav__link" href="/dashboard.html">Dashboard</a>
-            <a class="nav__link" href="/my-tasks.html">My Tasks</a>
+            <a class="nav__link" href="/my-tasks.html" data-hide-when-client>My Tasks</a>
             <a class="nav__link" href="/all-tasks.html">All Tasks</a>
             <a class="nav__link" href="/profile.html">Profile</a>
             <a class="nav__link is-hidden" data-role="ADMIN" href="/users.html">Users</a>
@@ -64,13 +64,14 @@
                         <th data-sort-key="title">Title<span class="sort-caret">▲</span></th>
                         <th data-sort-key="status">Status<span class="sort-caret">▲</span></th>
                         <th data-sort-key="priority">Priority<span class="sort-caret">▲</span></th>
-                        <th data-sort-key="client">Client<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="client" data-hide-when-client>Client<span class="sort-caret">▲</span></th>
                         <th data-sort-key="createdBy">Created by<span class="sort-caret">▲</span></th>
                         <th data-sort-key="createdAt">Created<span class="sort-caret">▲</span></th>
+                        <th data-sort-key="updatedAt">Updated<span class="sort-caret">▲</span></th>
                     </tr>
                     </thead>
                     <tbody id="mine-body">
-                    <tr><td colspan="7" class="muted" style="text-align:center;padding:30px">Loading…</td></tr>
+                    <tr><td colspan="8" class="muted" style="text-align:center;padding:30px">Loading…</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -78,7 +79,7 @@
     </section>
 </main>
 
-<footer class="app-foot">Admin++ &middot; Spring Boot + vanilla JS</footer>
+<footer class="app-foot">Admin++ | Logged in as <span data-auth-footer-user>&hellip;</span></footer>
 
 <script src="/js/app.js"></script>
 <script src="/js/auth.js"></script>

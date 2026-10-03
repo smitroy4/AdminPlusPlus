@@ -245,9 +245,7 @@ const App = (function () {
     };
 
     const PRIORITY_LABELS = {
-        LOW: 'Low',
-        MEDIUM: 'Medium',
-        HIGH: 'High',
+        NORMAL: 'Normal',
         URGENT: 'Urgent'
     };
 
@@ -417,7 +415,8 @@ const App = (function () {
         const headerRight = document.querySelector('.app-header__right');
         const loginBrand = document.querySelector('.login-card__brand');
         if (headerRight) {
-            headerRight.insertBefore(button, headerRight.firstChild);
+            /* sits last: [user chip] [notifications] [logout] [theme] */
+            headerRight.appendChild(button);
         } else if (loginBrand) {
             loginBrand.appendChild(button);
         } else {
@@ -549,6 +548,18 @@ const App = (function () {
         return { refresh: apply };
     }
 
+    /**
+     * How many header cells a table is actually showing right now.
+     * Role-conditional columns are dropped with `is-hidden`, so a render pass
+     * that skips the matching body cells needs this to size its empty state.
+     */
+    function columnCount(table) {
+        if (!table) {
+            return 0;
+        }
+        return $$('thead th', table).filter((th) => !th.classList.contains('is-hidden')).length;
+    }
+
     return {
         CSRF_HEADER,
         LOGIN_URL,
@@ -583,6 +594,7 @@ const App = (function () {
         hideAlert,
         busy,
         makeSortable,
+        columnCount,
         currentTheme,
         setTheme,
         toggleTheme,

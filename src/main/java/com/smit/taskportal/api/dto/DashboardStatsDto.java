@@ -10,6 +10,10 @@ import java.util.List;
  * {@code teamXxx} counters are populated for COORDINATOR and above (the
  * workload of ASSOCIATE accounts), {@code allXxx} counters only for
  * MANAGER and ADMIN (the company-wide backlog).
+ *
+ * <p>{@code myXxx} counts what is assigned to the caller — except for CLIENT
+ * accounts, which are never assignees and instead count the tasks of their own
+ * customer (see {@code TaskService.getDashboardStats()}).
  */
 public record DashboardStatsDto(long myOpen,
                                 long myInProgress,

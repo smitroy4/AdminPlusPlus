@@ -6,8 +6,9 @@
 
 document.addEventListener('DOMContentLoaded', () => {
     Auth.init(async () => {
-        /* The open backlog is readable by every role; only the counters and
-           the create button are restricted. */
+        /* The shared backlog is for staff; clients only get their own work
+           (loadAllTasks bails out for them). Counters and the create button
+           stay role-restricted on top of that. */
         await Promise.all([loadStats(), loadMyTasks(), loadAllTasks()]);
         if (Auth.isManagerOrAbove()) {
             wireCreateDialog();
@@ -25,6 +26,13 @@ async function loadStats() {
         setTile('#tile-my-progress', stats.myInProgress);
         setTile('#tile-my-completed', stats.myCompleted);
         setTile('#tile-my-total', stats.myTotal);
+        if (Auth.isClient()) {
+            /* Clients are never the assignee: the tiles count their customer's tasks. */
+            const totalLabel = App.$('#tile-my-total-label');
+            if (totalLabel) {
+                totalLabel.textContent = 'Total';
+            }
+        }
 
         if (stats.canViewTeam) {
             Auth.show(App.$('#team-tiles-section'));
@@ -78,7 +86,7 @@ function renderBreakdown(selector, buckets, kind) {
 
 /* ------------------------------------------------------------------ tables */
 
-const PRIORITY_ORDER = { URGENT: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
+const PRIORITY_ORDER = { URGENT: 2, NORMAL: 1 };
 const STATUS_ORDER = { OPEN: 4, IN_PROGRESS: 3, COMPLETED: 2, CLOSED: 1 };
 
 function accessors(withCreator) {
@@ -89,7 +97,7 @@ function accessors(withCreator) {
         priority: (task) => PRIORITY_ORDER[task.priority] || 0,
         assignedTo: (task) => (task.assignedTo ? task.assignedTo.username : '~unassigned'),
         client: (task) => (task.client ? task.client.name : '~internal'),
-        createdAt: (task) => new Date(task.createdAt).getTime() || 0
+        updatedAt: (task) => new Date(task.updatedAt).getTime() || 0
     };
     if (withCreator) {
         map.createdBy = (task) => (task.createdBy ? task.createdBy.username : '~unassigned');
@@ -97,28 +105,32 @@ function accessors(withCreator) {
     return map;
 }
 
-function renderRows(tasks, withCreator) {
+function renderRows(tasks, withCreator, columns) {
     if (!tasks || tasks.length === 0) {
-        return '<tr><td colspan="' + (withCreator ? 8 : 7) + '">'
+        return '<tr><td colspan="' + (columns || (withCreator ? 8 : 7)) + '">'
             + App.emptyState('No tasks to show', 'Tasks matching this view will appear here.')
             + '</td></tr>';
     }
+    /* The Client column is dropped for client accounts: every row here is
+       their own customer, so the column would be a constant. */
+    const showClient = !Auth.isClient();
     return tasks.map((task) => {
         const titleCell = '<td class="cell-title">'
             + App.esc(task.title)
             + (task.description ? '<span class="cell-sub">' + App.esc(truncate(task.description, 90)) + '</span>' : '')
             + '</td>';
         const creatorCell = withCreator ? '<td>' + App.userCell(task.createdBy) + '</td>' : '';
+        const clientCell = showClient ? '<td>' + App.clientCell(task.client) + '</td>' : '';
         return '<tr class="is-clickable" data-task-id="' + App.esc(task.id) + '" tabindex="0">'
             + '<td class="cell-taskno">' + App.esc(task.taskNo) + '</td>'
             + titleCell
             + '<td>' + App.statusBadge(task.status) + '</td>'
             + '<td>' + App.priorityBadge(task.priority) + '</td>'
             + '<td>' + App.userCell(task.assignedTo) + '</td>'
-            + '<td>' + App.clientCell(task.client) + '</td>'
+            + clientCell
             + creatorCell
-            + '<td class="cell-date" title="' + App.esc(App.formatDate(task.createdAt)) + '">'
-            + App.esc(App.formatDate(task.createdAt)) + '</td>'
+            + '<td class="cell-date" title="' + App.esc(App.formatDate(task.updatedAt)) + '">'
+            + App.esc(App.formatRelative(task.updatedAt)) + '</td>'
             + '</tr>';
     }).join('');
 }
@@ -149,29 +161,38 @@ function wireRowClicks(tbody) {
 
 async function loadMyTasks() {
     const tbody = App.$('#my-tasks-body');
+    const table = App.$('#my-tasks-table');
     wireRowClicks(tbody);
     try {
         const response = await App.getJson('/api/tasks/my-open');
-        App.makeSortable(App.$('#my-tasks-table'), response.data,
-            (rows) => { tbody.innerHTML = renderRows(rows, false); },
+        App.makeSortable(table, response.data,
+            (rows) => { tbody.innerHTML = renderRows(rows, false, App.columnCount(table)); },
             accessors(false), 'priority');
         setCount('#my-tasks-count', response.data.length);
     } catch (error) {
-        tbody.innerHTML = '<tr><td colspan="7">' + App.emptyState('Could not load your tasks', error.message) + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="' + App.columnCount(table) + '">'
+            + App.emptyState('Could not load your tasks', error.message) + '</td></tr>';
     }
 }
 
 async function loadAllTasks() {
+    /* The shared backlog is hidden for clients — they only ever have their
+       own customer's work, which the "My open tasks" table already shows. */
+    if (Auth.isClient()) {
+        return;
+    }
     const tbody = App.$('#all-tasks-body');
+    const table = App.$('#all-tasks-table');
     wireRowClicks(tbody);
     try {
         const response = await App.getJson('/api/tasks/all-open');
-        App.makeSortable(App.$('#all-tasks-table'), response.data,
-            (rows) => { tbody.innerHTML = renderRows(rows, true); },
+        App.makeSortable(table, response.data,
+            (rows) => { tbody.innerHTML = renderRows(rows, true, App.columnCount(table)); },
             accessors(true), 'priority');
         setCount('#all-tasks-count', response.data.length);
     } catch (error) {
-        tbody.innerHTML = '<tr><td colspan="8">' + App.emptyState('Could not load the backlog', error.message) + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="' + App.columnCount(table) + '">'
+            + App.emptyState('Could not load the backlog', error.message) + '</td></tr>';
     }
 }
 

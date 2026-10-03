@@ -127,24 +127,24 @@ public class DataInitializer implements ApplicationRunner {
 
         createTask("Draft Q3 capacity plan for the support team",
                 "Summarise headcount requests, shift coverage and the training backlog for next quarter.",
-                TaskPriority.HIGH, TaskStatus.OPEN, manager, null, globex);
+                TaskPriority.URGENT, TaskStatus.OPEN, manager, null, globex);
 
         createTask("Rotate staging database credentials",
                 "Rotate the staging DB password and update the deployment secrets. "
                         + "Announce the maintenance window in #ops.",
-                TaskPriority.MEDIUM, TaskStatus.OPEN, manager, null, null);
+                TaskPriority.NORMAL, TaskStatus.OPEN, manager, null, null);
 
         createTask("Archive closed tasks from 2024",
                 "Move all 2024 CLOSED tasks into the archive schema and export a CSV for the compliance team.",
-                TaskPriority.LOW, TaskStatus.CLOSED, manager, associate, acme);
+                TaskPriority.NORMAL, TaskStatus.CLOSED, manager, associate, acme);
 
         createTask("Prepare quarterly security review for Acme",
                 "Collect the access audit, pen-test findings and remediation status for the Acme QBR deck.",
-                TaskPriority.HIGH, TaskStatus.OPEN, manager, coordinator, acme);
+                TaskPriority.URGENT, TaskStatus.OPEN, manager, coordinator, acme);
 
         createTask("Onboard Initech SSO integration",
                 "Wire Initech up to the SSO broker: metadata exchange, certificate rotation, smoke tests.",
-                TaskPriority.MEDIUM, TaskStatus.IN_PROGRESS, manager, associate, initech);
+                TaskPriority.NORMAL, TaskStatus.IN_PROGRESS, manager, associate, initech);
     }
 
     private void createTask(String title, String description, TaskPriority priority, TaskStatus status,

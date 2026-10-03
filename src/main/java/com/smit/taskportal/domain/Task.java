@@ -74,7 +74,7 @@ public class Task {
     @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(name = "priority", nullable = false, length = 20)
-    private TaskPriority priority = TaskPriority.MEDIUM;
+    private TaskPriority priority = TaskPriority.NORMAL;
 
     @ToString.Exclude
     @ManyToOne(fetch = FetchType.LAZY)
@@ -91,6 +91,15 @@ public class Task {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "created_by", nullable = false)
     private User createdBy;
+
+    /**
+     * The client account that escalated this task to a manager; non-null once
+     * the escalation conversation exists (see {@code TaskMessage.escalation}).
+     */
+    @ToString.Exclude
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "escalated_by")
+    private User escalatedBy;
 
     @ToString.Exclude
     @Builder.Default
@@ -110,5 +119,20 @@ public class Task {
     public void addMessage(TaskMessage message) {
         messages.add(message);
         message.setTask(this);
+    }
+
+    /** True once a client has escalated this task to a manager. */
+    public boolean isEscalated() {
+        return escalatedBy != null;
+    }
+
+    /**
+     * Records "something happened here". Thread activity lives in
+     * {@code task_messages}, so it would otherwise leave {@link #updatedAt}
+     * untouched and the UI would claim a task is stale while people are
+     * actively discussing it.
+     */
+    public void touch() {
+        this.updatedAt = Instant.now();
     }
 }

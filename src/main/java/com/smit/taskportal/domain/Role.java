@@ -3,7 +3,8 @@ package com.smit.taskportal.domain;
 /**
  * Application roles. Ordered from least to most privileged so that
  * {@link #atLeast(Role)} comparisons are meaningful. {@link #CLIENT} sits at
- * the bottom: it is an external, read-only account with no internal powers.
+ * the bottom: it is an external account with no internal powers — it only
+ * reads and comments on its own customer's tasks.
  */
 public enum Role {
 

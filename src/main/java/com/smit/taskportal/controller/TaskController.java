@@ -4,8 +4,10 @@ import com.smit.taskportal.api.dto.ApiResponse;
 import com.smit.taskportal.api.dto.AssignTaskRequest;
 import com.smit.taskportal.api.dto.ClientDto;
 import com.smit.taskportal.api.dto.CreateTaskRequest;
+import com.smit.taskportal.api.dto.EscalateRequest;
 import com.smit.taskportal.api.dto.TaskDetailDto;
 import com.smit.taskportal.api.dto.TaskDto;
+import com.smit.taskportal.api.dto.TaskMessageDto;
 import com.smit.taskportal.api.dto.UpdateStatusRequest;
 import com.smit.taskportal.api.dto.UpdateTaskRequest;
 import com.smit.taskportal.domain.Task;
@@ -60,7 +62,22 @@ public class TaskController {
                 ? ClientDto.detailed(task.getClient())
                 : null;
 
-        return ApiResponse.ok(new TaskDetailDto(dto, messages, total, actor.isManagerOrAbove(), clientDetails));
+        return ApiResponse.ok(new TaskDetailDto(dto, messages, total, actor.isManagerOrAbove(), clientDetails,
+                taskMessageService.getEscalations(task, actor),
+                task.isEscalated(),
+                TaskMessageService.isEscalationParticipant(actor, task)));
+    }
+
+    /**
+     * One entry of the escalation conversation: clients open/continue it,
+     * managers and admins reply to it (service enforces the rules).
+     */
+    @PostMapping("/{id}/escalate")
+    public ResponseEntity<ApiResponse<TaskMessageDto>> escalate(@PathVariable Long id,
+                                                                @Valid @RequestBody EscalateRequest request) {
+        TaskMessageDto message = taskMessageService.escalate(id, request.messageBody());
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.ok("Escalation message posted", message));
     }
 
     /** Managers and admins only - coordinators and associates cannot raise tasks. */

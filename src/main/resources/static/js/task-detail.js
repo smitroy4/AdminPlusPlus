@@ -15,13 +15,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!detail) {
             return;
         }
-        await Promise.all([wireStatus(detail), wireAssign(detail, user), wireComposer(detail, user)]);
+        await Promise.all([wireStatus(detail), wireAssign(detail, user), wireComposer(detail, user),
+            wireEscalation()]);
     }).catch((error) => App.showAlert('#detail-error', error.message, 'error'));
 });
 
 /* ------------------------------------------------------------------- load */
 
-let state = { task: null, messages: [], canManage: false, isClient: false, currentUserId: null };
+let state = {
+    task: null, messages: [], canManage: false, isClient: false, currentUserId: null,
+    escalations: [], escalated: false, escalationParticipant: false
+};
 
 async function loadTask(taskId, user) {
     state.currentUserId = user.id;
@@ -31,10 +35,14 @@ async function loadTask(taskId, user) {
         const response = await App.getJson('/api/task/' + encodeURIComponent(taskId));
         state.task = response.data.task;
         state.messages = response.data.messages || [];
+        state.escalations = response.data.escalations || [];
+        state.escalated = !!response.data.escalated;
+        state.escalationParticipant = !!response.data.escalationParticipant;
         renderHeader(state.task);
         renderClientDetails(response.data.clientDetails);
         renderThread(state.messages);
         renderMessageCount(state.task.id, state.messages.length);
+        renderEscalation();
         return state;
     } catch (error) {
         const node = App.$('#detail-error');
@@ -57,6 +65,16 @@ function renderHeader(task) {
     App.$('#detail-title').textContent = task.title;
     App.$('#detail-status-badge').innerHTML = App.statusBadge(task.status);
     App.$('#detail-priority-badge').innerHTML = App.priorityBadge(task.priority);
+
+    const escalatedBadge = App.$('#detail-escalated-badge');
+    if (escalatedBadge) {
+        if (state.escalated) {
+            Auth.show(escalatedBadge);
+        } else {
+            Auth.hide(escalatedBadge);
+        }
+    }
+
     App.$('#detail-assignee').innerHTML = App.userCell(task.assignedTo);
     App.$('#detail-client').innerHTML = App.clientCell(task.client);
     App.$('#detail-creator').innerHTML = App.userCell(task.createdBy);
@@ -64,15 +82,14 @@ function renderHeader(task) {
     App.$('#detail-updated').textContent = App.formatDate(task.updatedAt);
     App.$('#detail-updated-meta').textContent = 'Last updated ' + App.formatRelative(task.updatedAt);
 
-    /* Client accounts are read-only: no status changes, no claiming. */
+    /* Clients may comment, but never change status or take ownership. */
     if (state.isClient) {
         Auth.hide(App.$('#status-controls'));
         Auth.hide(App.$('#assign-to-me-wrap'));
-        Auth.hide(App.$('#composer-section'));
     } else {
         Auth.show(App.$('#status-controls'));
-        Auth.show(App.$('#composer-section'));
     }
+    Auth.show(App.$('#composer-section'));
 
     const stateSelect = App.$('#status-select');
     if (stateSelect) {
@@ -106,13 +123,29 @@ function renderHeader(task) {
         Auth.hide(App.$('#unassign-btn'));
     }
 
+    /* One composer, one checkbox. Its meaning follows the role: managers and
+       admins get "Internal note", client accounts get "Escalate to Manager",
+       and the staff in between get no switch at all. */
     const internalToggle = App.$('#message-internal');
+    const escalateToggle = App.$('#message-escalate');
     if (internalToggle) {
-        if (state.canManage) {
-            internalToggle.checked = false;
-        } else {
-            internalToggle.closest('.checkbox').classList.add('is-hidden');
-        }
+        internalToggle.checked = false;
+    }
+    if (escalateToggle) {
+        escalateToggle.checked = false;
+    }
+    toggleOption(App.$('#message-internal-wrap'), state.canManage);
+    toggleOption(App.$('#message-escalate-wrap'), state.isClient);
+}
+
+function toggleOption(node, visible) {
+    if (!node) {
+        return;
+    }
+    if (visible) {
+        Auth.show(node);
+    } else {
+        Auth.hide(node);
     }
 }
 
@@ -138,6 +171,63 @@ function renderClientDetails(details) {
     App.$('#client-phone').textContent = details.phone || '—';
     App.$('#client-notes').textContent = details.notes || '—';
     Auth.show(card);
+}
+
+/* ------------------------------------------------------------- escalation */
+
+/**
+ * The escalation card is display-only: the composer above owns the writing, via
+ * its "Escalate to Manager" switch. The card therefore appears once — and only
+ * once — the conversation exists and the caller is part of it (managers/admins,
+ * plus the client who escalated).
+ */
+function renderEscalation() {
+    const section = App.$('#escalation-section');
+    if (!section) {
+        return;
+    }
+    if (!state.escalated || !state.escalationParticipant) {
+        Auth.hide(section);
+        return;
+    }
+    Auth.show(section);
+
+    App.$('#escalation-title').textContent = 'Escalation conversation';
+    App.$('#escalation-intro').textContent = 'Private thread between the escalating client, '
+        + 'managers and admins. Post into it by ticking "Escalate to Manager" in the composer above.';
+    const count = App.$('#escalation-count');
+    count.textContent = state.escalations.length
+        + (state.escalations.length === 1 ? ' message' : ' messages');
+    renderEscalationThread(state.escalations);
+}
+
+function renderEscalationThread(messages) {
+    const host = App.$('#escalation-thread');
+    if (!host) {
+        return;
+    }
+    if (!messages || messages.length === 0) {
+        host.innerHTML = '<div class="thread__empty">No escalation messages yet.</div>';
+        return;
+    }
+    host.innerHTML = messages.map(renderEscalationMessage).join('');
+    host.scrollTop = host.scrollHeight;
+}
+
+function renderEscalationMessage(message) {
+    const mine = message.fromUser && message.fromUser.id === state.currentUserId;
+    const canDelete = mine || state.canManage;
+
+    return '<div class="msg ' + (mine ? 'msg--mine' : 'msg--other') + ' msg--escalation">'
+        + '<div class="msg__head">'
+        + '<span class="msg__author">' + App.esc(message.fromUser ? message.fromUser.username : 'Unknown') + '</span>'
+        + (message.fromUser ? '<span class="msg__role">' + App.esc(message.fromUser.role) + '</span>' : '')
+        + '<span>' + App.esc(App.formatRelative(message.createdAt)) + '</span>'
+        + (canDelete ? '<button type="button" class="msg__del" data-delete-escalation="' + App.esc(message.id) + '">delete</button>' : '')
+        + '</div>'
+        + '<div class="msg__bubble">' + App.escMultiline(message.messageBody) + '</div>'
+        + '<div class="msg__tag">&#128274; Escalation</div>'
+        + '</div>';
 }
 
 /* ----------------------------------------------------------------- thread */
@@ -341,22 +431,32 @@ function wireComposer(detail, user) {
         }
 
         const internalToggle = App.$('#message-internal');
+        const escalateToggle = App.$('#message-escalate');
         const internal = !!(internalToggle && internalToggle.checked);
+        const escalate = !!(escalateToggle && escalateToggle.checked);
 
-        App.busy(submit, true, 'Posting…');
+        App.busy(submit, true, escalate ? 'Escalating…' : 'Posting…');
         try {
-            const response = await App.postJson('/api/task/' + detail.task.id + '/message', {
-                messageBody: body,
-                internal: internal
-            });
+            const response = escalate
+                ? await App.postJson('/api/task/' + detail.task.id + '/escalate', { messageBody: body })
+                : await App.postJson('/api/task/' + detail.task.id + '/message',
+                    { messageBody: body, internal: internal });
             textarea.value = '';
             if (internalToggle) {
                 internalToggle.checked = false;
             }
-            state.messages.push(response.data);
-            renderThread(state.messages);
-            renderMessageCount(detail.task.id, state.messages.length);
-            App.toast('Message posted', 'success');
+            if (escalateToggle) {
+                escalateToggle.checked = false;
+            }
+
+            if (escalate) {
+                recordEscalation(response.data);
+            } else {
+                state.messages.push(response.data);
+                renderThread(state.messages);
+                renderMessageCount(detail.task.id, state.messages.length);
+            }
+            App.toast(escalate ? 'Escalated to a manager' : 'Message posted', 'success');
         } catch (error) {
             App.showAlert('#message-alert', error.message, 'error');
         } finally {
@@ -389,4 +489,52 @@ function wireComposer(detail, user) {
             }
         });
     }
+}
+
+/* ----------------------------------------------------------- escalation IO */
+
+/** Applies a fresh escalation message to the page state and re-renders the card. */
+function recordEscalation(message) {
+    const first = !state.escalated;
+    if (first) {
+        state.escalated = true;
+        state.escalationParticipant = true;
+        if (state.task && state.task.priority !== 'URGENT') {
+            state.task.priority = 'URGENT';
+            App.$('#detail-priority-badge').innerHTML = App.priorityBadge('URGENT');
+        }
+        Auth.show(App.$('#detail-escalated-badge'));
+    }
+    state.escalations.push(message);
+    renderEscalation();
+}
+
+function wireEscalation() {
+    /* Delete only — writing happens in the shared composer. The handler is
+       delegated, because the rows are re-rendered after every post. */
+    const thread = App.$('#escalation-thread');
+    if (!thread) {
+        return;
+    }
+    thread.addEventListener('click', async (event) => {
+        const button = event.target.closest('[data-delete-escalation]');
+        if (!button) {
+            return;
+        }
+        if (!window.confirm('Delete this escalation message? This cannot be undone.')) {
+            return;
+        }
+        const messageId = button.dataset.deleteEscalation;
+        button.disabled = true;
+        try {
+            await App.delJson('/api/task/' + state.task.id + '/message/' + encodeURIComponent(messageId));
+            state.escalations = state.escalations.filter(
+                (message) => String(message.id) !== String(messageId));
+            renderEscalation();
+            App.toast('Message deleted', 'success');
+        } catch (error) {
+            button.disabled = false;
+            App.toast(error.message, 'error');
+        }
+    });
 }
